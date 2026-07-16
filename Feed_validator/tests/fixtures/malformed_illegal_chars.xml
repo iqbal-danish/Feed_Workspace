@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<catalog>
+    <book id="1">
+        <title>Illegal Chars</title>
+        <description>Contains illegal char: &#x0B;</description>
+    </book>
+</catalog>

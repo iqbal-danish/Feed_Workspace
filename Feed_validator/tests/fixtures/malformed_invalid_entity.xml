@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<catalog>
+    <book id="1">
+        <title>Entity Test</title>
+        <description>This has a &badentity; reference</description>
+    </book>
+</catalog>

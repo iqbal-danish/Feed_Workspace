@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Feed Dashboard - {{ metadata.filename }}</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.min.css" rel="stylesheet">
+    <!-- DataTables CSS -->
+    <link href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+    <!-- Custom CSS -->
+    <link href="{{ url_for('static', filename='css/style.css') }}?v=1.0.3" rel="stylesheet">
+    <style>
+        .sidebar-height {
+            height: calc(100vh - 120px);
+            overflow-y: auto;
+        }
+        .main-height {
+            height: calc(100vh - 120px);
+            overflow-y: auto;
+        }
+        .offcanvas {
+            background-color: rgba(11, 15, 25, 0.95);
+            backdrop-filter: blur(20px);
+            color: var(--text-primary);
+            border-left: 1px solid var(--border-color);
+        }
+        .offcanvas-header {
+            border-bottom: 1px solid var(--border-color);
+        }
+        /* Custom layout adjustments */
+        .filter-row {
+            background-color: rgba(255,255,255,0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 8px 12px;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-glow-1"></div>
+    <div class="bg-glow-2"></div>
+
+    <!-- Navbar / Header Summary -->
+    <nav class="navbar navbar-expand-lg border-bottom border-secondary border-opacity-25 py-3 mb-4" style="background-color: rgba(11, 15, 25, 0.8); backdrop-filter: blur(10px);">
+        <div class="container-fluid px-4">
+            <a class="navbar-brand d-flex align-items-center text-white" href="/">
+                <i class="bi bi-arrow-left-circle me-3 fs-4 text-secondary"></i>
+                <i class="bi bi-cpu text-primary fs-3 me-2"></i>
+                <div>
+                    <h4 class="mb-0 fs-5">{{ metadata.filename }}</h4>
+                    <span class="text-secondary" style="font-size: 0.75rem;">{{ metadata.file_type }} Feed Dashboard</span>
+                </div>
+            </a>
+            
+            <div class="d-flex gap-4 ms-auto text-secondary" style="font-size: 0.85rem;">
+                <div class="text-center border-end border-secondary border-opacity-25 pe-3">
+                    <div>Size</div>
+                    <div class="fw-bold text-white mt-1">{{ metadata.file_size }}</div>
+                </div>
+                <div class="text-center border-end border-secondary border-opacity-25 pe-3">
+                    <div>Records</div>
+                    <div class="fw-bold text-white mt-1">{{ metadata.total_jobs }}</div>
+                </div>
+                <div class="text-center border-end border-secondary border-opacity-25 pe-3">
+                    <div>Fields</div>
+                    <div class="fw-bold text-white mt-1">{{ metadata.total_fields }}</div>
+                </div>
+                {% if metadata.duplicate_id_count != '0' and metadata.duplicate_id_field != 'None' %}
+                <div class="text-center border-end border-secondary border-opacity-25 pe-3">
+                    <div class="text-danger">Duplicate ID Count</div>
+                    <div class="fw-bold text-danger mt-1">{{ metadata.duplicate_id_count }} ({{ metadata.duplicate_id_field }})</div>
+                </div>
+                {% endif %}
+                <div class="text-center">
+                    <div>Import Speed</div>
+                    <div class="fw-bold text-white mt-1">{{ metadata.total_jobs }} records in {{ metadata.processing_time }}s</div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid px-4">
+        <div class="row g-4">
+            <!-- Left Sidebar: Structure Explorer -->
+            <div class="col-lg-3">
+                <div class="glass-card p-3 sidebar-height">
+                    <h5 class="mb-3 d-flex align-items-center justify-content-between">
+                        <span><i class="bi bi-bezier2 me-2 text-primary"></i>Structure Explorer</span>
+                        <span class="badge badge-custom fs-7">{{ metadata.total_fields }} paths</span>
+                    </h5>
+                    <div class="form-text text-muted mb-3">Click on any leaf field to explore statistics.</div>
+                    
+                    <div class="border-top border-secondary border-opacity-25 pt-3">
+                        <div id="treeContainer">
+                            <!-- JS will dynamically populate the tree here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Work Area -->
+            <div class="col-lg-9">
+                <div class="row g-4">
+                    <!-- Field Statistics Panel (Collapsible/Dynamic) -->
+                    <div class="col-12 d-none" id="fieldStatsPanel">
+                        <div class="glass-card p-4">
+                            <div class="d-flex justify-content-between align-items-start mb-3">
+                                <div>
+                                    <h4 class="mb-1 text-primary" id="statFieldPath">Field/Path</h4>
+                                    <div class="d-flex flex-wrap gap-2 align-items-center mt-1">
+                                        <span class="text-secondary me-2" style="font-size: 0.85rem;">Field Explorer Details</span>
+                                        <button class="btn btn-xs btn-outline-primary py-1 px-2 text-white" onclick="showAllFieldValues()" style="font-size: 0.75rem;"><i class="bi bi-list-ul me-1"></i>View All Values</button>
+                                        <button class="btn btn-xs btn-outline-success py-1 px-2 text-white" onclick="downloadAllFieldValues()" style="font-size: 0.75rem;"><i class="bi bi-download me-1"></i>Download CSV</button>
+                                    </div>
+                                </div>
+                                <button onclick="closeFieldExplorer()" class="btn-close btn-close-white"></button>
+                            </div>
+                            
+                            <!-- Grid Stats -->
+                            <div class="row g-3 text-center mb-4">
+                                <div class="col-md-2 col-6">
+                                    <div class="border border-secondary border-opacity-25 rounded p-2">
+                                        <div class="text-secondary small">Completion %</div>
+                                        <div class="fs-5 fw-bold mt-1 text-white" id="statCompletion">0%</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2 col-6">
+                                    <div class="border border-secondary border-opacity-25 rounded p-2">
+                                        <div class="text-secondary small">Present</div>
+                                        <div class="fs-5 fw-bold mt-1 text-success" id="statPresent">0</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2 col-6">
+                                    <div class="border border-secondary border-opacity-25 rounded p-2">
+                                        <div class="text-secondary small">Missing</div>
+                                        <div class="fs-5 fw-bold mt-1 text-danger" id="statMissing">0</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2 col-6">
+                                    <div class="border border-secondary border-opacity-25 rounded p-2">
+                                        <div class="text-secondary small">Unique Count</div>
+                                        <div class="fs-5 fw-bold mt-1 text-info" id="statUnique">0</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2 col-6">
+                                    <div class="border border-secondary border-opacity-25 rounded p-2">
+                                        <div class="text-secondary small">Avg Length</div>
+                                        <div class="fs-5 fw-bold mt-1 text-warning" id="statAvgLen">0 ch</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2 col-6">
+                                    <div class="border border-secondary border-opacity-25 rounded p-2">
+                                        <div class="text-secondary small">Max Length</div>
+                                        <div class="fs-5 fw-bold mt-1 text-white" id="statMaxLen">0 ch</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Common Values Lists -->
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <h6 class="text-secondary mb-2"><i class="bi bi-sort-down me-2 text-success"></i>Top 10 Most Common Values</h6>
+                                    <ol class="list-group list-group-numbered" id="statTopValuesList">
+                                        <!-- JS dynamic populate -->
+                                    </ol>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6 class="text-secondary mb-2"><i class="bi bi-sort-up me-2 text-warning"></i>Top 10 Least Common Values</h6>
+                                    <ol class="list-group list-group-numbered" id="statBottomValuesList">
+                                        <!-- JS dynamic populate -->
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Main Tabs Area -->
+                    <div class="col-12">
+                        <div class="glass-card main-height p-4">
+                            <!-- Tabs Nav -->
+                            <ul class="nav nav-tabs border-secondary border-opacity-25 mb-4" id="dashboardTabs" role="tablist">
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link active text-white" id="query-tab" data-bs-toggle="tab" data-bs-target="#query-panel" type="button" role="tab"><i class="bi bi-funnel-fill me-2"></i>Analysis Builder</button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link text-white" id="search-tab" data-bs-toggle="tab" data-bs-target="#search-panel" type="button" role="tab"><i class="bi bi-search me-2"></i>Search</button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link text-white" id="duplicates-tab" data-bs-toggle="tab" data-bs-target="#duplicates-panel" type="button" role="tab"><i class="bi bi-copy me-2"></i>Duplicates</button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link text-white" id="missing-tab" data-bs-toggle="tab" data-bs-target="#missing-panel" type="button" role="tab"><i class="bi bi-clipboard2-x-fill me-2"></i>Completeness Report</button>
+                                </li>
+                            </ul>
+
+                            <!-- Tabs Content -->
+                            <div class="tab-content" id="dashboardTabsContent">
+                                <!-- Query and Filter Panel -->
+                                <div class="tab-pane fade show active" id="query-panel" role="tabpanel">
+                                    <!-- Filters Builder Section -->
+                                    <div class="mb-4">
+                                        <h5 class="mb-3 text-secondary">Visual Filters</h5>
+                                        <div id="filterList" class="mb-3">
+                                            <!-- Dynamic Filters inserted here -->
+                                        </div>
+                                        <div class="d-flex gap-2">
+                                            <button onclick="addFilterRow()" class="btn btn-sm btn-secondary"><i class="bi bi-plus-lg me-1"></i>Add Filter</button>
+                                            <button onclick="clearAllFilters()" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash-fill me-1"></i>Clear Filters</button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Aggregations (Group By) Section -->
+                                    <div class="row g-3 mb-4">
+                                        <div class="col-md-6">
+                                            <h5 class="mb-3 text-secondary">Group By (Multi-level Hierarchy)</h5>
+                                            <div id="groupByList" class="d-flex flex-wrap gap-2 align-items-center mb-3">
+                                                <!-- Dynamic group elements will render here -->
+                                            </div>
+                                            <div class="d-flex gap-2 align-items-center">
+                                                <select class="form-select form-select-sm w-auto" id="selectGroupByField">
+                                                    <option value="">-- Add Group By Level --</option>
+                                                    <!-- Populate dynamically -->
+                                                </select>
+                                                <button onclick="addGroupByLevel()" class="btn btn-sm btn-secondary"><i class="bi bi-plus-lg"></i></button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Query Execution Controls -->
+                                    <div class="d-flex justify-content-between align-items-center border-top border-secondary border-opacity-25 pt-4 mb-4">
+                                        <div>
+                                            <button onclick="runQueryAnalysis()" class="btn btn-primary px-4 py-2" id="runQueryBtn">
+                                                <i class="bi bi-play-fill me-1"></i>Run Analysis
+                                            </button>
+                                        </div>
+                                        
+                                        <!-- Exports buttons (Visible only when results loaded) -->
+                                        <div class="d-none d-flex gap-2" id="queryExportButtons">
+                                            <button onclick="exportData('csv')" class="btn btn-sm btn-outline-success"><i class="bi bi-filetype-csv me-1"></i>CSV</button>
+                                            <button onclick="exportData('xlsx')" class="btn btn-sm btn-outline-primary"><i class="bi bi-filetype-xlsx me-1"></i>Excel</button>
+                                            <button onclick="exportData('json')" class="btn btn-sm btn-outline-warning"><i class="bi bi-filetype-json me-1"></i>JSON</button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Results Visualization Area -->
+                                    <div id="queryResultsWrapper">
+                                        <!-- Interactive Chart.js Canvas -->
+                                        <div class="mb-4 d-none" id="chartCard">
+                                            <div class="card p-3" style="background-color: rgba(0,0,0,0.2); border: 1px solid var(--border-color);">
+                                                <h6 class="text-secondary mb-3"><i class="bi bi-pie-chart-fill me-2"></i>Analysis Visualizations</h6>
+                                                <div style="max-height: 320px; position: relative;">
+                                                    <canvas id="analyticsChart"></canvas>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Results Data Grid -->
+                                        <div class="table-responsive d-none" id="resultsTableCard">
+                                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                                <h6 class="text-secondary mb-0"><i class="bi bi-table me-2"></i>Query Results (<span id="resultsMatchesCount">0</span> records)</h6>
+                                                <span class="text-muted small" id="resultsLimitWarning">Showing first 1000 records.</span>
+                                            </div>
+                                            <table class="table table-dark table-hover" id="resultsGridTable" style="font-size: 0.9rem; width: 100%;">
+                                                <thead>
+                                                    <tr id="resultsTableHeader">
+                                                        <!-- Dynamic columns -->
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="resultsTableBody">
+                                                    <!-- Dynamic rows -->
+                                                </tbody>
+                                            </table>
+                                        </div>
+
+                                        <div id="queryDefaultPlaceholder" class="text-center py-5 text-secondary">
+                                            <i class="bi bi-funnel fs-1 d-block mb-3 opacity-50"></i>
+                                            Add filters or group-by variables, then click "Run Analysis" to retrieve data.
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Search Panel -->
+                                <div class="tab-pane fade" id="search-panel" role="tabpanel">
+                                    <div class="row g-3 mb-4">
+                                        <div class="col-md-3">
+                                            <label class="form-label text-secondary">Search Field</label>
+                                            <select class="form-select" id="searchField">
+                                                <option value="all">Any Field</option>
+                                                <!-- Populate dynamically -->
+                                            </select>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label text-secondary">Match Type</label>
+                                            <select class="form-select" id="searchMatchType">
+                                                <option value="Contains">Contains</option>
+                                                <option value="Exact Match">Exact Match</option>
+                                                <option value="Starts With">Starts With</option>
+                                                <option value="Ends With">Ends With</option>
+                                                <option value="Regex">Regex (Pattern)</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label text-secondary">Search Term</label>
+                                            <div class="input-group">
+                                                <input type="text" class="form-control" id="searchTerm" placeholder="Enter keywords or pattern...">
+                                                <button onclick="runSearchAnalysis()" class="btn btn-primary"><i class="bi bi-search"></i> Search</button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Search Results table -->
+                                    <div class="table-responsive d-none" id="searchTableCard">
+                                        <div class="d-flex justify-content-between align-items-center mb-3">
+                                            <h6 class="text-secondary mb-0">Search Results (<span id="searchMatchesCount">0</span> matches)</h6>
+                                        </div>
+                                        <table class="table table-dark table-hover" id="searchGridTable" style="font-size: 0.9rem; width:100%;">
+                                            <thead>
+                                                <tr id="searchTableHeader">
+                                                    <!-- Dynamic columns -->
+                                                </tr>
+                                            </thead>
+                                            <tbody id="searchTableBody">
+                                                <!-- Dynamic rows -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div id="searchPlaceholder" class="text-center py-5 text-secondary">
+                                        <i class="bi bi-search fs-1 d-block mb-3 opacity-50"></i>
+                                        Enter query parameters and run search to locate matching jobs.
+                                    </div>
+                                </div>
+
+                                <!-- Duplicates Panel -->
+                                <div class="tab-pane fade" id="duplicates-panel" role="tabpanel">
+                                    <div class="row g-3 align-items-end mb-4">
+                                        <div class="col-md-6">
+                                            <label class="form-label text-secondary">Select Field Path</label>
+                                            <select class="form-select" id="duplicateSelectField">
+                                                <option value="">-- Choose Field to Check --</option>
+                                                <!-- Populate dynamically -->
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <button onclick="runDuplicateDetection()" class="btn btn-primary py-2 px-4"><i class="bi bi-search-heart me-1"></i>Find Duplicates</button>
+                                        </div>
+                                    </div>
+
+                                    <div class="table-responsive d-none" id="duplicateTableCard">
+                                        <div class="d-flex justify-content-between align-items-center mb-3">
+                                            <h6 class="text-secondary mb-0"><i class="bi bi-copy me-2"></i>Duplicate Redundancy Report</h6>
+                                            <button onclick="exportDuplicates()" class="btn btn-sm btn-outline-success"><i class="bi bi-filetype-csv me-1"></i>Export report</button>
+                                        </div>
+                                        <table class="table table-dark table-hover" id="duplicatesGridTable" style="font-size: 0.9rem;">
+                                            <thead>
+                                                <tr>
+                                                    <th>Duplicate Value</th>
+                                                    <th>Redundant Count</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="duplicatesTableBody">
+                                                <!-- Dynamic rows -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div id="duplicatesPlaceholder" class="text-center py-5 text-secondary">
+                                        <i class="bi bi-copy fs-1 d-block mb-3 opacity-50"></i>
+                                        Select an XML field to find all duplicate values and frequencies.
+                                    </div>
+                                </div>
+
+                                <!-- Completeness Report Panel -->
+                                <div class="tab-pane fade" id="missing-panel" role="tabpanel">
+                                    <div class="d-flex justify-content-between align-items-center mb-4">
+                                        <h5 class="text-secondary mb-0"><i class="bi bi-clipboard2-data me-2"></i>All Fields Completeness Metrics</h5>
+                                        <div class="d-flex gap-2">
+                                            <button onclick="runCompletenessScan()" class="btn btn-sm btn-secondary"><i class="bi bi-arrow-clockwise me-1"></i>Scan / Refresh</button>
+                                            <button onclick="exportCompletenessReport()" class="btn btn-sm btn-outline-success"><i class="bi bi-filetype-csv me-1"></i>Export CSV</button>
+                                            <button onclick="exportFullHTMLReport()" class="btn btn-sm btn-outline-indigo" style="color:var(--primary);border-color:var(--primary);"><i class="bi bi-file-earmark-pdf-fill me-1"></i>HTML Report</button>
+                                        </div>
+                                    </div>
+
+                                    <div class="table-responsive d-none" id="completenessTableCard">
+                                        <table class="table table-dark table-hover" id="completenessGridTable" style="font-size: 0.9rem;">
+                                            <thead>
+                                                <tr>
+                                                    <th>Field Path</th>
+                                                    <th>Completion Rate</th>
+                                                    <th>Present Count</th>
+                                                    <th>Missing Count</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="completenessTableBody">
+                                                <!-- Dynamic rows -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div id="completenessPlaceholder" class="text-center py-5 text-secondary">
+                                        <i class="bi bi-clipboard2-x fs-1 d-block mb-3 opacity-50"></i>
+                                        Click "Scan / Refresh" to audit missing value statistics for all paths.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: View All Field Values -->
+    <div class="modal fade" id="allValuesModal" tabindex="-1" aria-labelledby="allValuesModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content glass-card border-1" style="background-color: rgba(11, 15, 25, 0.95); max-height: 80vh; overflow: hidden;">
+                <div class="modal-header border-secondary border-opacity-25">
+                    <h5 class="modal-title" id="allValuesModalLabel"><i class="bi bi-list-ul me-2 text-primary"></i>All Field Values</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4" style="overflow-y: auto;">
+                    <div class="table-responsive">
+                        <table class="table table-dark table-hover" id="allValuesGridTable" style="font-size: 0.9rem; width: 100%;">
+                            <thead>
+                                <tr>
+                                    <th>Value</th>
+                                    <th>Frequency Count</th>
+                                </tr>
+                            </thead>
+                            <tbody id="allValuesTableBody">
+                                <!-- Dynamic rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sliding Drawer: Job Inspector (Offcanvas) -->
+    <div class="offcanvas offcanvas-end" style="width: 600px;" tabindex="-1" id="jobInspectorDrawer" aria-labelledby="jobInspectorDrawerLabel">
+        <div class="offcanvas-header">
+            <h5 id="jobInspectorDrawerLabel"><i class="bi bi-eye-fill me-2 text-primary"></i>Job Record Inspector</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body">
+            <!-- Basic job statistics -->
+            <div class="mb-4">
+                <span class="badge badge-custom" id="inspectRecordId">Record ID: 1</span>
+            </div>
+            
+            <!-- Tabs in inspector -->
+            <ul class="nav nav-pills nav-fill mb-3" id="inspectorTabs" role="tablist" style="background-color: rgba(255,255,255,0.02); border-radius: 8px; padding: 4px;">
+                <li class="nav-item">
+                    <button class="nav-link active py-2 text-white" id="inspect-fields-tab" data-bs-toggle="tab" data-bs-target="#inspect-fields" type="button" role="tab">Extracted Fields</button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link py-2 text-white" id="inspect-raw-tab" data-bs-toggle="tab" data-bs-target="#inspect-raw" type="button" role="tab">Raw XML/JSON</button>
+                </li>
+            </ul>
+            
+            <div class="tab-content" id="inspectorTabsContent">
+                <!-- Extracted Fields list -->
+                <div class="tab-pane fade show active" id="inspect-fields" role="tabpanel">
+                    <div class="table-responsive">
+                        <table class="table table-dark table-hover align-middle" style="font-size: 0.85rem;">
+                            <thead>
+                                <tr>
+                                    <th>Field Path</th>
+                                    <th>Value</th>
+                                </tr>
+                            </thead>
+                            <tbody id="inspectFieldsTableBody">
+                                <!-- Dynamic rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Raw content text block -->
+                <div class="tab-pane fade" id="inspect-raw" role="tabpanel">
+                    <pre><code class="language-xml" id="inspectRawContentCode">Raw content here</code></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- jQuery & DataTables JS -->
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap5.min.js"></script>
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Page Controller scripts -->
+    <script>
+        // Pass server variable to client script
+        const taskId = "{{ task_id }}";
+        const rawSchemaTree = {{ schema_tree | tojson | safe }};
+    </script>
+    <script src="{{ url_for('static', filename='js/main.js') }}?v=1.0.3"></script>
+</body>
+</html>

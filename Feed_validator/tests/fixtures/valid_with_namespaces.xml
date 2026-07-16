@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.example.com/feed"
+      xmlns:meta="http://www.example.com/metadata"
+      xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <meta:header>
+        <meta:version>2.0</meta:version>
+        <meta:generator>XML Validator Pro</meta:generator>
+    </meta:header>
+    <entry id="e1">
+        <dc:title>First Entry</dc:title>
+        <dc:creator>Alice</dc:creator>
+        <dc:date>2024-05-01</dc:date>
+        <content type="text/plain">Hello world</content>
+    </entry>
+    <entry id="e2">
+        <dc:title>Second Entry</dc:title>
+        <dc:creator>Bob</dc:creator>
+        <dc:date>2024-05-02</dc:date>
+        <content type="text/html">&lt;p&gt;Some HTML content&lt;/p&gt;</content>
+    </entry>
+    <meta:footer>
+        <meta:total_entries>2</meta:total_entries>
+    </meta:footer>
+</feed>

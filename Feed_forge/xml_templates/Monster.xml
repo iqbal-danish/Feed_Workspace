@@ -1,0 +1,16 @@
+<jobfeed>
+  <jobs>
+    <job>
+      <company>{{company}}</company>
+      <posteddate>{{posteddate}}</posteddate>
+      <title>{{title}}</title>
+      <description><![CDATA[{{description}}]]></description>
+      <city>{{city}}</city>
+      <postalcode>{{postalcode}}</postalcode>
+      <state>{{state}}</state>
+      <country>{{country}}</country>
+      <url>{{url}}</url>
+      <joblocationtype>{{joblocationtype}}</joblocationtype>
+    </job>
+  </jobs>
+</jobfeed>

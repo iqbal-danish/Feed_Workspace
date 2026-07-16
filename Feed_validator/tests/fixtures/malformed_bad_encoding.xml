@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<catalog>
+    <book id="1">
+        <title>Encoding Test</title>
+        <author>Ren&#xE9; M&#xFC;ller</author>
+    </book>
+</catalog>

@@ -1,0 +1,32 @@
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# OS-generated files
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# IDEs & Editor configurations
+.vscode/
+.idea/
+*.suo
+*.user
+*.sublime-project
+*.sublime-workspace
+
+# FeedForge User Data & Compilation outputs
+uploads/*
+!uploads/.gitkeep
+output/*
+!output/.gitkeep
+workspaces/*
+!workspaces/.gitkeep

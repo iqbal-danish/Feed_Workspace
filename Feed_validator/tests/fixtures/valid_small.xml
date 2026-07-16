@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<catalog>
+    <book id="1">
+        <title>XML Fundamentals</title>
+        <author>John Smith</author>
+        <price currency="USD">29.99</price>
+        <publish_date>2024-01-15</publish_date>
+        <description>A comprehensive guide to XML.</description>
+    </book>
+    <book id="2">
+        <title>Advanced XML Processing</title>
+        <author>Jane Doe</author>
+        <price currency="EUR">34.99</price>
+        <publish_date>2024-03-20</publish_date>
+        <description>Deep dive into XML processing techniques.</description>
+    </book>
+    <book id="3">
+        <title>XML Schema Design</title>
+        <author>Bob Wilson</author>
+        <price currency="GBP">39.99</price>
+        <publish_date>2024-06-10</publish_date>
+        <description>Master XML Schema design patterns.</description>
+    </book>
+</catalog>

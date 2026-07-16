@@ -1,0 +1,255 @@
+/* Core Design System & Global Styles */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+body {
+    font-family: 'Inter', sans-serif;
+    color: #2c3e50;
+    background-color: #f4f6f8;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Sidebar Custom Styling - Sleek Desktop Dark Theme */
+aside {
+    background: linear-gradient(180deg, #111827 0%, #1f2937 100%) !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.step-num {
+    width: 32px;
+    height: 32px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.25s ease;
+}
+
+#workflow-nav .nav-link {
+    color: rgba(255, 255, 255, 0.6);
+    border: 1px solid transparent;
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 8px;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#workflow-nav .nav-link:hover:not([disabled]) {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.04);
+    transform: translateX(3px);
+}
+
+#workflow-nav .nav-link.active {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+#workflow-nav .nav-link.active .step-num {
+    background-color: #0d6efd !important;
+    border-color: #0d6efd;
+    box-shadow: 0 0 10px rgba(13, 110, 253, 0.5);
+}
+
+#workflow-nav .nav-link[disabled] {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+/* Premium Workspace Cards */
+.card {
+    border-radius: 14px;
+    border: 1px solid rgba(226, 232, 240, 0.8);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
+}
+
+/* modern tab design */
+.nav-tabs {
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.nav-tabs .nav-link {
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #64748b;
+    padding: 12px 20px;
+    font-weight: 500;
+    transition: all 0.25s ease;
+}
+
+.nav-tabs .nav-link:hover {
+    color: #1e293b;
+    border-bottom-color: #cbd5e1;
+}
+
+.nav-tabs .nav-link.active {
+    color: #0d6efd;
+    border-bottom: 2px solid #0d6efd;
+    background: transparent;
+}
+
+/* Upload Zone styling */
+.upload-zone {
+    border: 2px dashed #cbd5e1;
+    border-radius: 12px;
+    background-color: #fcfdfe;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.upload-zone:hover, .upload-zone.dragover {
+    border-color: #0d6efd;
+    background-color: rgba(13, 110, 253, 0.02);
+    transform: scale(0.995);
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f8fafc;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* Custom Checkbox for standard mapping switches */
+.mapping-active-checkbox {
+    width: 17px;
+    height: 17px;
+    cursor: pointer;
+    border-radius: 4px;
+    border-color: #cbd5e1;
+}
+
+.mapping-active-checkbox:checked {
+    background-color: #198754;
+    border-color: #198754;
+}
+
+/* Enhanced Inputs */
+.form-control, .form-select {
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    padding: 8px 12px;
+    transition: all 0.2s ease-in-out;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15);
+}
+
+/* Previews container */
+#xml-preview-container {
+    font-family: 'JetBrains Mono', monospace !important;
+    line-height: 1.6;
+}
+
+/* Animations */
+.workflow-step-view {
+    animation: fadeIn 0.25s ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+    display: inline-block;
+    animation: spin 3s linear infinite;
+}
+
+/* Row Styling helpers */
+.block-row {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 10px;
+    transition: background-color 0.2s ease;
+}
+
+.block-row:hover {
+    background-color: #f1f5f9;
+}
+
+/* Card Top Border Accents */
+.card-standard-accent {
+    border-top: 4px solid #3b82f6 !important;
+}
+.card-campaign-accent {
+    border-top: 4px solid #f59e0b !important;
+}
+.card-advanced-accent {
+    border-top: 4px solid #10b981 !important;
+}
+
+/* Gradient Action Buttons */
+.btn-gradient-primary {
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%) !important;
+    color: white !important;
+    border: none !important;
+    font-weight: 500;
+    transition: all 0.2s ease-in-out;
+}
+.btn-gradient-primary:hover {
+    background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+}
+.btn-gradient-primary:active {
+    transform: translateY(0);
+}
+.btn-gradient-primary[disabled] {
+    background: #cbd5e1 !important;
+    color: #94a3b8 !important;
+    box-shadow: none !important;
+    transform: none !important;
+    cursor: not-allowed;
+}
+
+.btn-gradient-success {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+    color: white !important;
+    border: none !important;
+    font-weight: 500;
+    transition: all 0.2s ease-in-out;
+}
+.btn-gradient-success:hover {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(5, 150, 105, 0.2);
+}
+.btn-gradient-success:active {
+    transform: translateY(0);
+}
