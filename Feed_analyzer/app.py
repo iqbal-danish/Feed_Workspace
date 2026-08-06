@@ -1,10 +1,13 @@
 import os
+import io
 import uuid
 import time
+import json
 import logging
 import threading
 import datetime
-import pandas as pd
+# Defer pandas import to speed up startup
+# import pandas as pd
 from flask import Flask, render_template, request, jsonify, Response, send_file, redirect, url_for
 from werkzeug.utils import secure_filename
 import config
@@ -16,7 +19,14 @@ from search import compile_search
 from statistics import get_field_stats, get_multi_group_by, get_global_statistics
 from duplicates import find_duplicates
 from reports import generate_missing_value_report, generate_duplicate_summary
-from exporters import query_to_dataframe, export_csv, export_excel, export_json, export_html_report
+from exporters import (
+    query_to_dataframe,
+    export_csv,
+    export_excel,
+    export_json,
+    export_html_report,
+    stream_query_csv_response,
+)
 from charts import compile_chart_data
 
 # Initialize logging
@@ -30,6 +40,30 @@ app.secret_key = config.SECRET_KEY
 # task_id -> {status, records_count, bytes_read, percentage, speed, memory_mb, eta_seconds, error, metadata}
 parsing_tasks = {}
 tasks_lock = threading.Lock()
+
+
+def get_export_request_data():
+    """Accept export payloads from JSON fetches and standard form posts."""
+    if request.is_json:
+        return request.get_json(silent=True) or {}
+
+    payload = request.form.get("payload")
+    if payload:
+        try:
+            return json.loads(payload)
+        except json.JSONDecodeError:
+            return {}
+
+    return request.form.to_dict() if request.form else {}
+
+
+def csv_download_response(df, download_name):
+    """Return a CSV download directly from memory to avoid temp-file overhead."""
+    csv_buffer = io.StringIO()
+    df.to_csv(csv_buffer, index=False)
+    csv_bytes = csv_buffer.getvalue().encode("utf-8-sig")
+    headers = {"Content-Disposition": f'attachment; filename="{download_name}"'}
+    return Response(csv_bytes, mimetype="text/csv", headers=headers)
 
 def get_recent_feeds():
     """Reads available database files and returns their cached metadata."""
@@ -345,6 +379,7 @@ def field_values(task_id):
 @app.route('/export/<task_id>/field_values')
 def export_field_values(task_id):
     """Downloads a CSV file containing all unique values and counts for a field."""
+    import pandas as pd
     field_path = request.args.get('field')
     if not field_path:
         return jsonify({"error": "Missing field query parameter"}), 400
@@ -368,13 +403,9 @@ def export_field_values(task_id):
             ORDER BY [Count] DESC
         """
         df = pd.read_sql_query(query, conn)
-        
-        temp_filename = f"field_values_{uuid.uuid4().hex}.csv"
-        output_path = os.path.join(config.REPORT_FOLDER, temp_filename)
-        df.to_csv(output_path, index=False, encoding='utf-8-sig')
-        
+
         download_name = f"{metadata.get('filename', 'export')}_{field_path.replace('/', '_')}_values.csv"
-        return send_file(output_path, as_attachment=True, download_name=download_name)
+        return csv_download_response(df, download_name)
     except Exception as e:
         logger.error(f"Error exporting values for {field_path}: {e}")
         return jsonify({"error": str(e)}), 500
@@ -384,6 +415,7 @@ def export_field_values(task_id):
 @app.route('/api/query/<task_id>', methods=['POST'])
 def run_query(task_id):
     """Executes filtering and group-by visual queries against the feed database."""
+    import pandas as pd
     db_path = os.path.join(config.DB_FOLDER, f"{task_id}.db")
     if not os.path.exists(db_path):
         return jsonify({"error": "Database not found"}), 404
@@ -495,6 +527,7 @@ def get_missing_report(task_id):
 @app.route('/export/<task_id>/<export_format>', methods=['POST'])
 def export_data(task_id, export_format):
     """Exports visual query results to Excel, CSV, JSON or generates HTML report."""
+    import pandas as pd
     db_path = os.path.join(config.DB_FOLDER, f"{task_id}.db")
     if not os.path.exists(db_path):
         return jsonify({"error": "Database not found"}), 404
@@ -504,7 +537,7 @@ def export_data(task_id, export_format):
     mappings = db.field_mappings
     
     # 1. Check if we're exporting standard visual query results or just general reports
-    data = request.json or {}
+    data = get_export_request_data()
     export_type = data.get('export_type', 'query') # 'query', 'duplicates', 'stats'
     
     temp_filename = f"export_{uuid.uuid4().hex}"
@@ -536,14 +569,21 @@ def export_data(task_id, export_format):
                 
             where_sql = " AND ".join(where_parts)
             where_clause = f"WHERE {where_sql}" if where_sql else ""
-            
-            query = f"SELECT id, raw_content, * FROM records {where_clause}"
+
+            col_selections = []
+            for path, col in mappings.items():
+                col_selections.append(col)
+            select_columns = ", ".join(["id"] + col_selections) if col_selections else "id"
+
+            query = f"SELECT {select_columns} FROM records {where_clause}"
+            if export_format == 'csv':
+                download_name = f"{metadata.get('filename', 'export')}_{export_type}.{export_format}"
+                return stream_query_csv_response(db_path, query, params, mappings, download_name)
+
             df = query_to_dataframe(db_path, query, params, mappings)
             
             # Write to file
-            if export_format == 'csv':
-                export_csv(df, output_path)
-            elif export_format == 'xlsx':
+            if export_format == 'xlsx':
                 export_excel(df, output_path)
             elif export_format == 'json':
                 export_json(df, output_path)
@@ -562,7 +602,8 @@ def export_data(task_id, export_format):
                 export_html_report(metadata, stats_list, output_path)
             elif export_format == 'csv':
                 df = pd.DataFrame(stats_list)
-                export_csv(df, output_path)
+                download_name = f"{metadata.get('filename', 'export')}_{export_type}.{export_format}"
+                return csv_download_response(df, download_name)
             elif export_format == 'xlsx':
                 df = pd.DataFrame(stats_list)
                 export_excel(df, output_path)
@@ -578,7 +619,8 @@ def export_data(task_id, export_format):
             df = pd.DataFrame(dups)
             
             if export_format == 'csv':
-                export_csv(df, output_path)
+                download_name = f"{metadata.get('filename', 'export')}_{export_type}.{export_format}"
+                return csv_download_response(df, download_name)
             elif export_format == 'xlsx':
                 export_excel(df, output_path)
             elif export_format == 'json':

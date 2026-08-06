@@ -22,7 +22,10 @@ from validator.models import (
     ValidationError,
     ValidationResult,
 )
-from reports.report_generator import generate_report
+from validator.report_generator import ReportGenerator
+
+def generate_report(result, output_path, format):
+    getattr(ReportGenerator, f"generate_{format}")(result, output_path)
 
 
 # ── Shared fixtures ─────────────────────────────────────────────────

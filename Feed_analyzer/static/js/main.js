@@ -7,9 +7,103 @@ let searchDataTable = null;
 let currentChart = null;
 let currentFieldPath = "";
 let allValuesDataTable = null;
+let pyBridge = null;
+let nativeDownloadMessages = {};
+
+function triggerBlobDownload(blob, fileName) {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.style.display = "none";
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+}
+
+function ensureDownloadExtension(fileName, defaultName) {
+    const trimmedName = (fileName || "").trim();
+    const fallbackName = (defaultName || "export.csv").trim();
+    if (!trimmedName) {
+        return fallbackName;
+    }
+
+    const defaultExt = fallbackName.includes(".") ? fallbackName.slice(fallbackName.lastIndexOf(".")) : "";
+    if (!defaultExt || trimmedName.toLowerCase().endsWith(defaultExt.toLowerCase())) {
+        return trimmedName;
+    }
+    if (trimmedName.includes(".")) {
+        return trimmedName;
+    }
+    return `${trimmedName}${defaultExt}`;
+}
+
+function downloadWithName(url, options, defaultName, successMessage, failureMessage) {
+    const normalizedName = ensureDownloadExtension(defaultName, defaultName);
+    showToast("Download Started", `Preparing ${normalizedName}...`);
+    const reportsPathHint = `Feed_analyzer/reports/${normalizedName}`;
+
+    if (pyBridge && typeof pyBridge.download_file === "function") {
+        const absoluteUrl = new URL(url, window.location.origin).toString();
+        const method = (options && options.method) ? options.method : "GET";
+        const payloadJson = options && options.body ? options.body : "";
+        pyBridge.download_file(absoluteUrl, normalizedName, method, payloadJson, (requestId) => {
+            if (requestId) {
+                nativeDownloadMessages[requestId] = {
+                    successMessage: successMessage || `Saved to ${reportsPathHint}`,
+                    failureMessage: failureMessage || "Failed to download file."
+                };
+            } else {
+                showToast("Download Cancelled", "No file was downloaded.", "error");
+            }
+        });
+        return;
+    }
+
+    fetch(url, options)
+        .then(res => {
+            if (!res.ok) throw new Error("HTTP error " + res.status);
+            return res.blob();
+        })
+        .then(blob => {
+            triggerBlobDownload(blob, normalizedName);
+            showToast("Download Complete", successMessage || `Saved to ${reportsPathHint}`);
+        })
+        .catch((err) => {
+            console.error(err);
+            showToast("Export Failed", failureMessage || "Failed to download file.", "error");
+        });
+}
+
+function initQtBridge() {
+    if (typeof qt === "undefined" || typeof QWebChannel === "undefined") {
+        return;
+    }
+
+    new QWebChannel(qt.webChannelTransport, (channel) => {
+        pyBridge = channel.objects.pyBridge || null;
+        if (pyBridge && pyBridge.download_finished) {
+            pyBridge.download_finished.connect((requestId, success, detail) => {
+                const entry = nativeDownloadMessages[requestId] || {};
+                delete nativeDownloadMessages[requestId];
+                if (success) {
+                    showToast("Download Complete", entry.successMessage || "File downloaded successfully!");
+                } else {
+                    showToast("Export Failed", entry.failureMessage || "Failed to download file.", "error");
+                    if (detail) {
+                        console.error("Native download failed:", detail);
+                    }
+                }
+            });
+        }
+        console.log("Analyzer QWebChannel connected.");
+    });
+}
 
 // Initialize on load
 document.addEventListener("DOMContentLoaded", () => {
+    initQtBridge();
     // 1. Process flat fields from schema tree
     flatFields = extractPaths(rawSchemaTree);
     
@@ -574,21 +668,17 @@ function inspectRecord(rowId, recordObj) {
 function exportData(format) {
     const payload = compileBuilderData();
     payload.export_type = "query";
-    
-    fetch(`/export/${taskId}/${format}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-    })
-    .then(res => res.blob())
-    .then(blob => {
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `feed_query_export.${format}`;
-        a.click();
-    })
-    .catch(() => alert("Export failed."));
+    downloadWithName(
+        `/export/${taskId}/${format}`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        },
+        `feed_query_export.${format}`,
+        `Feed query results successfully exported to ${format.toUpperCase()}!`,
+        "Failed to export query results."
+    );
 }
 
 // Search Panel execution
@@ -736,20 +826,17 @@ function runDuplicateDetection() {
 function exportDuplicates() {
     const field = document.getElementById("duplicateSelectField").value;
     if (!field) return;
-    
-    fetch(`/export/${taskId}/csv`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ export_type: "duplicates", field: field })
-    })
-    .then(res => res.blob())
-    .then(blob => {
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `duplicates_${field.replace(/\//g, '_')}.csv`;
-        a.click();
-    });
+    downloadWithName(
+        `/export/${taskId}/csv`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ export_type: "duplicates", field: field })
+        },
+        `duplicates_${field.replace(/\//g, '_')}.csv`,
+        `Duplicate analysis CSV for "${field}" downloaded successfully!`,
+        "Failed to export duplicates analysis."
+    );
 }
 
 // Completeness reports panel execution
@@ -795,35 +882,31 @@ function runCompletenessScan() {
 }
 
 function exportCompletenessReport() {
-    fetch(`/export/${taskId}/csv`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ export_type: "stats" })
-    })
-    .then(res => res.blob())
-    .then(blob => {
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `completeness_report.csv`;
-        a.click();
-    });
+    downloadWithName(
+        `/export/${taskId}/csv`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ export_type: "stats" })
+        },
+        "completeness_report.csv",
+        "Completeness report CSV downloaded successfully!",
+        "Failed to export completeness report."
+    );
 }
 
 function exportFullHTMLReport() {
-    fetch(`/export/${taskId}/html`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ export_type: "stats" })
-    })
-    .then(res => res.blob())
-    .then(blob => {
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `analytical_summary_report.html`;
-        a.click();
-    });
+    downloadWithName(
+        `/export/${taskId}/html`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ export_type: "stats" })
+        },
+        "analytical_summary_report.html",
+        "HTML summary report downloaded successfully!",
+        "Failed to export HTML report."
+    );
 }
 
 function showAllFieldValues() {
@@ -883,5 +966,71 @@ function showAllFieldValues() {
 
 function downloadAllFieldValues() {
     if (!currentFieldPath) return;
-    window.location.href = `/export/${taskId}/field_values?field=${encodeURIComponent(currentFieldPath)}`;
+
+    downloadWithName(
+        `/export/${taskId}/field_values?field=${encodeURIComponent(currentFieldPath)}`,
+        {},
+        `${currentFieldPath.replace(/\//g, '_')}_values.csv`,
+        `Unique values CSV for "${currentFieldPath}" downloaded successfully!`,
+        "Failed to download field values."
+    );
+}
+
+// Premium Toast Notification
+function showToast(title, desc, type = "success") {
+    let container = document.querySelector(".toast-container-custom");
+    if (!container) {
+        container = document.createElement("div");
+        container.className = "toast-container-custom";
+        document.body.appendChild(container);
+    }
+
+    const toast = document.createElement("div");
+    toast.className = "toast-custom";
+    
+    // Customize border/icon based on type
+    let iconClass = "bi bi-check-circle-fill text-success";
+    if (type === "error") {
+        toast.style.borderLeftColor = "var(--danger)";
+        iconClass = "bi bi-exclamation-triangle-fill text-danger";
+    } else if (type === "warning") {
+        toast.style.borderLeftColor = "var(--warning)";
+        iconClass = "bi bi-exclamation-circle-fill text-warning";
+    } else if (type === "info") {
+        toast.style.borderLeftColor = "var(--secondary)";
+        iconClass = "bi bi-info-circle-fill text-secondary";
+    }
+
+    toast.innerHTML = `
+        <div class="toast-custom-icon">
+            <i class="${iconClass}"></i>
+        </div>
+        <div class="toast-custom-content">
+            <h5 class="toast-custom-title">${title}</h5>
+            <p class="toast-custom-desc">${desc}</p>
+        </div>
+        <button class="toast-custom-close" onclick="this.parentElement.classList.remove('show'); setTimeout(() => this.parentElement.remove(), 400)">
+            <i class="bi bi-x"></i>
+        </button>
+    `;
+
+    container.appendChild(toast);
+    
+    // Trigger transition reflow
+    toast.offsetHeight;
+    
+    // Show toast
+    toast.classList.add("show");
+
+    // Auto-remove after 4 seconds
+    setTimeout(() => {
+        if (toast.parentNode) {
+            toast.classList.remove("show");
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.remove();
+                }
+            }, 400);
+        }
+    }, 4000);
 }

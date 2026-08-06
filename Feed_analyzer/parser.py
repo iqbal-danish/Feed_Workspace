@@ -222,7 +222,8 @@ def stream_xml_records(
         elem.clear()
         parent = elem.getparent()
         if parent is not None:
-            parent.remove(elem)
+            while elem.getprevious() is not None:
+                del parent[0]
 def stream_json_records(
     file_obj: Any, 
     record_path: str, 

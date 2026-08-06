@@ -1,8 +1,12 @@
 import os
+import sys
 import unittest
 import sqlite3
 import tempfile
 import json
+import shutil
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from parser import (
     detect_xml_job_element,
     detect_json_record_path,
@@ -14,6 +18,8 @@ import lxml.etree as ET
 from analyzer import FeedAnalyzerDb
 from filters import compile_filters
 from search import compile_search
+from app import app as flask_app
+import config
 
 class TestFeedAnalyzer(unittest.TestCase):
     def setUp(self):
@@ -176,6 +182,61 @@ class TestFeedAnalyzer(unittest.TestCase):
         self.assertIn("col_1 LIKE ?", where_sql)
         self.assertIn("OR", where_sql)
         self.assertEqual(params, ["%Python%", "%Python%"])
+
+
+class TestFeedAnalyzerExports(unittest.TestCase):
+    def setUp(self):
+        self.temp_root = tempfile.mkdtemp()
+        self.original_db_folder = config.DB_FOLDER
+        self.original_report_folder = config.REPORT_FOLDER
+        config.DB_FOLDER = os.path.join(self.temp_root, "databases")
+        config.REPORT_FOLDER = os.path.join(self.temp_root, "reports")
+        os.makedirs(config.DB_FOLDER, exist_ok=True)
+        os.makedirs(config.REPORT_FOLDER, exist_ok=True)
+
+        self.task_id = "export-test"
+        self.db_path = os.path.join(config.DB_FOLDER, f"{self.task_id}.db")
+        db = FeedAnalyzerDb(self.db_path)
+        db.insert_records([
+            ({"title": "Engineer", "company": "Acme"}, '{"title":"Engineer"}'),
+            ({"title": "Analyst", "company": "Beta"}, '{"title":"Analyst"}'),
+        ])
+        db.save_metadata({"filename": "sample_feed"})
+        db.close()
+
+        flask_app.config["TESTING"] = True
+        self.client = flask_app.test_client()
+
+    def tearDown(self):
+        config.DB_FOLDER = self.original_db_folder
+        config.REPORT_FOLDER = self.original_report_folder
+        shutil.rmtree(self.temp_root, ignore_errors=True)
+
+    def test_export_csv_accepts_json_payload(self):
+        response = self.client.post(
+            f"/export/{self.task_id}/csv",
+            json={"export_type": "query", "filters": []}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(response.mimetype, ("text/csv", "application/vnd.ms-excel"))
+        self.assertIn("attachment;", response.headers.get("Content-Disposition", ""))
+        self.assertIn("sample_feed_query.csv", response.headers.get("Content-Disposition", ""))
+        self.assertIn("title", response.get_data(as_text=True))
+        self.assertNotIn("Raw XML/JSON Content", response.get_data(as_text=True))
+
+    def test_export_csv_accepts_form_payload(self):
+        response = self.client.post(
+            f"/export/{self.task_id}/csv",
+            data={"payload": json.dumps({"export_type": "query", "filters": []})}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(response.mimetype, ("text/csv", "application/vnd.ms-excel"))
+        self.assertIn("attachment;", response.headers.get("Content-Disposition", ""))
+        self.assertIn("sample_feed_query.csv", response.headers.get("Content-Disposition", ""))
+        self.assertIn("Engineer", response.get_data(as_text=True))
+        self.assertNotIn('{"title":"Engineer"}', response.get_data(as_text=True))
 
 if __name__ == '__main__':
     unittest.main()

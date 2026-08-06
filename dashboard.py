@@ -4,9 +4,13 @@ import socket
 import subprocess
 import logging
 import datetime
+import json
+import threading
+import urllib.request
+import uuid
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl, QTimer, QSize, QDateTime, QPoint, QPointF, QRectF, QEvent
+from PySide6.QtCore import Qt, QUrl, QTimer, QSize, QDateTime, QPoint, QPointF, QRectF, QEvent, QObject, Slot, Signal
 from PySide6.QtGui import QFont, QIcon, QColor, QPainter, QPen, QLinearGradient, QBrush, QPainterPath, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
@@ -17,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebEngineCore import QWebEngineSettings, QWebEnginePage
+from PySide6.QtWebChannel import QWebChannel
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -54,6 +59,107 @@ class ConsoleWebPage(QWebEnginePage):
     """Subclass of QWebEnginePage to capture and log JavaScript console outputs."""
     def javaScriptConsoleMessage(self, level, message, line_number, source_id):
         logger.info(f"JS Console [{source_id}:{line_number}]: {message}")
+
+
+class AnalyzerDownloadBridge(QObject):
+    """Qt bridge that lets the embedded analyzer save downloads natively."""
+    download_finished = Signal(str, bool, str)
+
+    def __init__(self, parent_window):
+        super().__init__(parent_window)
+        self.parent_window = parent_window
+        self.download_finished.connect(self._handle_download_finished)
+        self.download_log_path = os.path.join(WORKSPACE_DIR, "logs", "feed_workspace_downloads.log")
+        self.default_reports_dir = os.path.join(WORKSPACE_DIR, "Feed_analyzer", "reports")
+
+    @Slot(str, str, str, str, result=str)
+    def download_file(self, url: str, suggested_name: str, method: str = "GET", payload_json: str = "") -> str:
+        try:
+            suggested_name = suggested_name or "export.csv"
+            ext = os.path.splitext(suggested_name)[1].lower()
+            os.makedirs(self.default_reports_dir, exist_ok=True)
+            save_path = os.path.join(self.default_reports_dir, suggested_name)
+            if ext and not save_path.lower().endswith(ext):
+                save_path = f"{save_path}{ext}"
+
+            request_id = uuid.uuid4().hex
+            self._write_download_log(f"{request_id} save selected -> {save_path}")
+            worker = threading.Thread(
+                target=self._download_worker,
+                args=(request_id, url, save_path, method, payload_json),
+                daemon=True
+            )
+            worker.start()
+            logger.info("Analyzer download started: %s -> %s", request_id, save_path)
+            return request_id
+        except Exception as e:
+            logger.error("Analyzer native download failed: %s", e, exc_info=True)
+            self._write_download_log(f"save dialog/setup failure -> {e}")
+            QMessageBox.critical(
+                self.parent_window,
+                "Download Failed",
+                f"Could not save the exported file:\n{e}"
+            )
+            return ""
+
+    def _download_worker(self, request_id: str, url: str, save_path: str, method: str, payload_json: str) -> None:
+        temp_path = f"{save_path}.part"
+        try:
+            parent_dir = os.path.dirname(save_path)
+            if parent_dir:
+                os.makedirs(parent_dir, exist_ok=True)
+
+            data = None
+            headers = {}
+            request_method = (method or "GET").upper()
+            if request_method == "POST":
+                data = (payload_json or "{}").encode("utf-8")
+                headers["Content-Type"] = "application/json"
+
+            self._write_download_log(f"{request_id} download start -> {url}")
+            request = urllib.request.Request(url, data=data, headers=headers, method=request_method)
+            with urllib.request.urlopen(request, timeout=600) as response, open(temp_path, "wb") as output_file:
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    output_file.write(chunk)
+
+            os.replace(temp_path, save_path)
+            file_size = os.path.getsize(save_path)
+            self._write_download_log(f"{request_id} download complete -> {save_path} ({file_size} bytes)")
+            logger.info("Analyzer download saved to %s", save_path)
+            self.download_finished.emit(request_id, True, save_path)
+        except Exception as e:
+            logger.error("Analyzer background download failed: %s", e, exc_info=True)
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except Exception:
+                pass
+            self._write_download_log(f"{request_id} download failed -> {e}")
+            self.download_finished.emit(request_id, False, str(e))
+
+    @Slot(str, bool, str)
+    def _handle_download_finished(self, request_id: str, success: bool, detail: str) -> None:
+        if success:
+            logger.info("Analyzer download completed: %s -> %s", request_id, detail)
+            return
+
+        QMessageBox.critical(
+            self.parent_window,
+            "Download Failed",
+            f"Could not save the exported file:\n{detail}"
+        )
+
+    def _write_download_log(self, message: str) -> None:
+        try:
+            os.makedirs(os.path.dirname(self.download_log_path), exist_ok=True)
+            with open(self.download_log_path, "a", encoding="utf-8") as fh:
+                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                fh.write(f"[{timestamp}] {message}\n")
+        except Exception:
+            pass
 
 
 # ── Uptime Sparkline Widget ───────────────────────────────────────────────────
@@ -2821,6 +2927,18 @@ class FeedWorkspace(QMainWindow):
 
                 web_view = QWebEngineView(container)
                 web_view.setPage(ConsoleWebPage(web_view))
+                channel = QWebChannel(web_view.page())
+                bridge = AnalyzerDownloadBridge(self)
+                channel.registerObject("pyBridge", bridge)
+                web_view.page().setWebChannel(channel)
+                web_view._download_channel = channel
+                web_view._download_bridge = bridge
+                profile = web_view.page().profile()
+                try:
+                    profile.downloadRequested.disconnect(self.handle_download_requested)
+                except RuntimeError:
+                    pass
+                profile.downloadRequested.connect(self.handle_download_requested)
                 ws = web_view.settings()
                 ws.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
                 ws.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
@@ -2837,7 +2955,44 @@ class FeedWorkspace(QMainWindow):
         self.diff_widget = FeedDiffTab(self)
         self.stacked_widget.addWidget(self.diff_widget)
 
-
+    def handle_download_requested(self, download_item):
+        """Handles file download requests from the QWebEngineView safely."""
+        try:
+            logger.info("Download requested.")
+            suggested_dir = download_item.downloadDirectory() or ""
+            # Fall back to suggestedFileName if downloadFileName is empty/None
+            suggested_name = download_item.downloadFileName() or download_item.suggestedFileName() or "export.csv"
+            logger.info(f"Suggested dir: {suggested_dir}, name: {suggested_name}")
+            
+            initial_path = os.path.join(suggested_dir, suggested_name) if suggested_dir else suggested_name
+            
+            ext = os.path.splitext(suggested_name)[1].lower() if suggested_name else ""
+            filter_str = "All Files (*)"
+            if ext == '.csv':
+                filter_str = "CSV Files (*.csv);;All Files (*)"
+            elif ext in ('.xlsx', '.xls'):
+                filter_str = "Excel Files (*.xlsx);;All Files (*)"
+            elif ext == '.html':
+                filter_str = "HTML Files (*.html);;All Files (*)"
+                
+            save_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save Exported File",
+                initial_path,
+                filter_str
+            )
+            
+            if save_path:
+                download_item.setDownloadDirectory(os.path.dirname(save_path))
+                download_item.setDownloadFileName(os.path.basename(save_path))
+                download_item.accept()
+                logger.info(f"Download accepted: saving to {save_path}")
+            else:
+                download_item.cancel()
+                logger.info("Download cancelled by user.")
+        except Exception as e:
+            logger.error(f"Error in handle_download_requested: {e}", exc_info=True)
+            download_item.cancel()
 
     # ── Home Page Builder ─────────────────────────────────────────────────────
     def _build_home_page(self):

@@ -1,10 +1,67 @@
+from __future__ import annotations
 import os
 import csv
+import io
 import json
 import sqlite3
-import pandas as pd
-from typing import List, Dict, Any, Tuple
+# Defer pandas import to speed up startup
+# import pandas as pd
+from flask import Response, stream_with_context
+from typing import Iterable, List, Dict, Any, Tuple
 from analyzer import get_db_connection
+
+
+def _display_headers(columns: Iterable[str], field_mappings: Dict[str, str]) -> List[str]:
+    """Map raw SQLite columns to user-friendly export headers."""
+    reverse_mappings = {v: k for k, v in field_mappings.items()}
+    rename_dict = {
+        "id": "Record ID",
+        "raw_content": "Raw XML/JSON Content"
+    }
+    return [rename_dict.get(col, reverse_mappings.get(col, col)) for col in columns]
+
+
+def stream_query_csv_response(
+    db_path: str,
+    query_sql: str,
+    params: List[Any],
+    field_mappings: Dict[str, str],
+    download_name: str,
+    batch_size: int = 1000
+) -> Response:
+    """Stream a CSV export directly from SQLite without materializing a DataFrame."""
+    conn = get_db_connection(db_path)
+    cursor = conn.execute(query_sql, params)
+    raw_columns = [desc[0] for desc in cursor.description or []]
+    headers = _display_headers(raw_columns, field_mappings)
+
+    def generate_rows():
+        try:
+            # Emit UTF-8 BOM so Excel opens Unicode CSV cleanly.
+            yield "\ufeff"
+
+            buffer = io.StringIO()
+            writer = csv.writer(buffer, lineterminator="\n")
+            writer.writerow(headers)
+            yield buffer.getvalue()
+            buffer.seek(0)
+            buffer.truncate(0)
+
+            while True:
+                rows = cursor.fetchmany(batch_size)
+                if not rows:
+                    break
+                for row in rows:
+                    writer.writerow(["" if value is None else value for value in row])
+                yield buffer.getvalue()
+                buffer.seek(0)
+                buffer.truncate(0)
+        finally:
+            cursor.close()
+            conn.close()
+
+    headers_dict = {"Content-Disposition": f'attachment; filename="{download_name}"'}
+    return Response(stream_with_context(generate_rows()), mimetype="text/csv", headers=headers_dict)
 
 def query_to_dataframe(
     db_path: str,
@@ -13,25 +70,12 @@ def query_to_dataframe(
     field_mappings: Dict[str, str]
 ) -> pd.DataFrame:
     """Runs a query on SQLite and returns a Pandas DataFrame with original path headers."""
+    import pandas as pd
     conn = get_db_connection(db_path)
     try:
         # Load query into DataFrame
         df = pd.read_sql_query(query_sql, conn, params=params)
-        
-        # Reverse mapping: col_name -> field_path
-        reverse_mappings = {v: k for k, v in field_mappings.items()}
-        
-        # We also have special columns: "id", "raw_content"
-        # Let's map them to user friendly names
-        rename_dict = {
-            "id": "Record ID",
-            "raw_content": "Raw XML/JSON Content"
-        }
-        for col in df.columns:
-            if col in reverse_mappings:
-                rename_dict[col] = reverse_mappings[col]
-                
-        df.rename(columns=rename_dict, inplace=True)
+        df.rename(columns=dict(zip(df.columns, _display_headers(df.columns, field_mappings))), inplace=True)
         return df
     finally:
         conn.close()

@@ -5,15 +5,19 @@ import subprocess
 def create_lnk():
     pwd = os.path.dirname(os.path.abspath(__file__))
     lnk_path = os.path.join(pwd, "Feed Workspace.lnk")
+    python_exe = sys.executable
+    pythonw_exe = python_exe.replace("python.exe", "pythonw.exe")
+    target_path = pythonw_exe if os.path.exists(pythonw_exe) else python_exe
     
     # PowerShell script to create shortcut
     ps_script = f"""
     $WshShell = New-Object -ComObject WScript.Shell
     $Shortcut = $WshShell.CreateShortcut('{lnk_path}')
-    $Shortcut.TargetPath = 'pythonw.exe'
+    $Shortcut.TargetPath = '{target_path}'
     $Shortcut.Arguments = 'dashboard.py'
     $Shortcut.WorkingDirectory = '{pwd}'
     $Shortcut.Description = 'Launch Feed Workspace'
+    $Shortcut.IconLocation = '{target_path},0'
     $Shortcut.Save()
     """
     
