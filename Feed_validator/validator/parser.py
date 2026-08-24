@@ -218,8 +218,11 @@ def extract_context_lines(
     if is_minified:
         try:
             size = file_path.stat().st_size
-            start = max(0, byte_offset - 500)
-            length = min(1000, size - start)
+            if size == 0:
+                return []
+            safe_offset = max(0, min(byte_offset, size))
+            start = max(0, min(safe_offset - 500, max(0, size - 1000)))
+            length = max(1, min(1000, size - start))
 
             with open(file_path, "rb") as f:
                 f.seek(start)
@@ -249,22 +252,37 @@ def extract_context_lines(
     end = error_line + context_count
 
     context: list[ContextLine] = []
+    all_lines: list[tuple[int, str]] = []
 
     try:
         with open(file_path, "r", encoding=encoding, errors="replace") as fh:
             for line_no, line_text in enumerate(fh, start=1):
+                clean_text = line_text.rstrip("\n\r")
+                all_lines.append((line_no, clean_text))
                 if line_no > end:
                     break
                 if line_no >= start:
                     context.append(
                         ContextLine(
                             line_number=line_no,
-                            text=line_text.rstrip("\n\r"),
+                            text=clean_text,
                             is_error_line=(line_no == error_line),
                         )
                     )
     except OSError as exc:
         logger.warning("Failed to extract context from %s: %s", file_path, exc)
+
+    if not context and all_lines:
+        # If error_line was outside range (e.g. past EOF), show the last available lines
+        tail = all_lines[-min(len(all_lines), context_count * 2):]
+        for l_num, l_txt in tail:
+            context.append(
+                ContextLine(
+                    line_number=l_num,
+                    text=l_txt,
+                    is_error_line=(l_num == tail[-1][0]),
+                )
+            )
 
     return context
 
@@ -338,14 +356,19 @@ class StreamingXMLParser:
 
         errors: list[ValidationError] = []
         error_log = []
+        seen_error_keys: set[tuple[int, int, str]] = set()
 
+        # Step 1: Strict non-recovering pass (100% W3C standard compliance)
+        # Guarantees that any strict syntax violation (e.g. boolean attribute, unclosed tag)
+        # is caught immediately, even at line 7,000,000+, without being dropped by recovery buffers.
+        strict_syntax_failed = False
         try:
             with open(file_path, "rb") as raw_f:
                 wrapper = ProgressFileWrapper(raw_f, total_size, progress_callback)
                 context = etree.iterparse(
                     wrapper,
                     events=('end',),
-                    recover=True,
+                    recover=False,
                     huge_tree=True,
                     resolve_entities=False,
                     no_network=True
@@ -375,25 +398,26 @@ class StreamingXMLParser:
                         while elem.getprevious() is not None:
                             del parent[0]
 
-                error_log = context.error_log
+                if hasattr(context, "error_log") and context.error_log:
+                    error_log.extend(context.error_log)
 
         except etree.XMLSyntaxError as exc:
-            error_log = getattr(exc, "error_log", None)
-            if not error_log:
-                line, col = getattr(exc, "position", (1, 1))
-                errors.append(
-                    ValidationError(
-                        error_number=1,
-                        line=line,
-                        column=col,
-                        byte_offset=self._estimate_byte_offset(line, total_size, self._count_lines(file_path)),
-                        message=getattr(exc, "msg", str(exc)),
-                        category=categorize_error(getattr(exc, "msg", str(exc))),
-                        severity=ErrorSeverity.FATAL,
-                        context_lines=extract_context_lines(file_path, line, self._context_count, encoding)
-                    )
-                )
-                error_log = []
+            strict_syntax_failed = True
+            exc_log = getattr(exc, "error_log", None)
+            if exc_log:
+                error_log.extend(exc_log)
+            else:
+                pos = getattr(exc, "position", (1, 1))
+                line_no, col_no = pos if isinstance(pos, tuple) and len(pos) == 2 else (1, 1)
+                msg = getattr(exc, "msg", str(exc))
+                # Add synthetic entry from exception
+                class _SyntheticLogEntry:
+                    line = line_no
+                    column = col_no
+                    message = msg
+                    level = 3
+                error_log.append(_SyntheticLogEntry())
+
         except OSError as exc:
             logger.error("IO error while reading %s: %s", file_path, exc)
             errors.append(
@@ -409,17 +433,60 @@ class StreamingXMLParser:
             )
             return errors, file_info
 
+        # Step 2: If strict pass caught a fatal syntax error, perform a secondary recovery pass
+        # to collect any other warnings / multi-error diagnostics throughout the file.
+        if strict_syntax_failed and (cancel_event is None or not cancel_event.is_set()):
+            try:
+                with open(file_path, "rb") as raw_f:
+                    rec_wrapper = ProgressFileWrapper(raw_f, total_size, None)
+                    rec_context = etree.iterparse(
+                        rec_wrapper,
+                        events=('end',),
+                        recover=True,
+                        huge_tree=True,
+                        resolve_entities=False,
+                        no_network=True
+                    )
+                    for event, elem in rec_context:
+                        if cancel_event is not None and cancel_event.is_set():
+                            break
+                        if not file_info.root_element:
+                            root = elem.getroottree().getroot()
+                            if root is not None:
+                                tag = root.tag
+                                if isinstance(tag, str):
+                                    if tag.startswith("{"):
+                                        file_info.root_element = tag.split("}", 1)[1]
+                                    else:
+                                        file_info.root_element = tag
+                                nsmap = root.nsmap if hasattr(root, "nsmap") else {}
+                                file_info.namespace_count = len(nsmap)
+                        elem.clear()
+                        parent = elem.getparent()
+                        if parent is not None:
+                            while elem.getprevious() is not None:
+                                del parent[0]
+                    if hasattr(rec_context, "error_log") and rec_context.error_log:
+                        error_log.extend(rec_context.error_log)
+            except Exception as rec_exc:
+                logger.debug("Secondary recovery pass completed: %s", rec_exc)
+
         # Extract XML version from file head.
         file_info.xml_version = self._extract_xml_version(file_path)
 
         # Count total lines.
         file_info.line_count = self._count_lines(file_path)
 
-        idx = len(errors) + 1
+        idx = 1
         for entry in error_log:
             line = entry.line if entry.line else 1
             column = entry.column if entry.column else 1
             message = entry.message or "Unknown error"
+            key = (line, column, message.strip())
+            if key in seen_error_keys:
+                continue
+            seen_error_keys.add(key)
+
             byte_offset = self._estimate_byte_offset(line, total_size, file_info.line_count or 1)
             category = categorize_error(message)
             severity = _map_severity(entry.level)

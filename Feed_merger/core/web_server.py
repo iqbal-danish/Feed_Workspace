@@ -88,6 +88,7 @@ def get_config():
         "output_file": str(config.output_file),
         "delete_temp_files": config.delete_temp_files,
         "reset_duplicate_db": config.reset_duplicate_db,
+        "tag_source_feed": config.tag_source_feed,
     }
 
 
@@ -198,6 +199,7 @@ async def start_merge(payload: dict):
             output_file=Path(payload.get("output_file", "output/merged.xml")),
             delete_temp_files=payload.get("delete_temp_files", True),
             reset_duplicate_db=payload.get("reset_duplicate_db", True),
+            tag_source_feed=payload.get("tag_source_feed", False),
         )
 
         loop = asyncio.get_running_loop()

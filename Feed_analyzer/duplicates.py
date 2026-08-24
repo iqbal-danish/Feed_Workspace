@@ -1,7 +1,7 @@
 import sqlite3
 import logging
 from typing import Dict, Any, List
-from analyzer import get_db_connection
+from analyzer import get_analytics_connection
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ def find_duplicates(
     if not col_name:
         return []
 
-    conn = get_db_connection(db_path)
+    conn = get_analytics_connection(db_path)
     duplicates = []
     
     try:

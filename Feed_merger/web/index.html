@@ -46,8 +46,8 @@
             </div>
             
             <div class="sidebar-footer">
-                <div class="footer-title"><i class="fa-solid fa-microchip"></i> Streaming XML v1.2</div>
-                <div class="footer-desc">Low-memory pipeline leveraging lxml event-driven iteration.</div>
+                <div class="footer-title"><i class="fa-solid fa-microchip"></i> Streaming XML v2.0</div>
+                <div class="footer-desc">High-throughput producer-consumer pipeline with O(1) deduplication.</div>
             </div>
         </aside>
 
@@ -57,7 +57,7 @@
             <header class="content-header">
                 <div class="header-titles">
                     <h1>Workspace Control Panel</h1>
-                    <p>Load feeds, adjust output configs, and orchestrate the merge pipeline.</p>
+                    <p>Load feeds, adjust output configs, and orchestrate the high-speed merge pipeline.</p>
                 </div>
                 <button class="btn btn-primary" id="btn-run">
                     <i class="fa-solid fa-play"></i> Run Merger
@@ -78,6 +78,11 @@
                                 <i class="fa-solid fa-trash-can"></i> Clear All
                             </button>
                         </div>
+                    </div>
+                    <!-- Search feeds input -->
+                    <div class="feeds-search-bar">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" id="search-feeds-input" placeholder="Search configured feeds (URL, path, host)...">
                     </div>
                     <div class="feeds-list-container">
                         <ul class="feeds-list" id="feeds-list">
@@ -112,10 +117,22 @@
                                 <span class="checkbox-custom"></span>
                                 Start with a fresh duplicate index
                             </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="chk-tag-source">
+                                <span class="checkbox-custom"></span>
+                                Tag jobs with source URL (<code style="font-size: 10px; color: #60a5fa;">&lt;source_feed_url&gt;</code>)
+                            </label>
                         </div>
-                        <div class="progress-bar-container" id="global-progress-bar-container">
-                            <div class="progress-bar-glow"></div>
-                            <div class="progress-bar" id="global-progress-bar"></div>
+                        <!-- Live Progress Bar Section -->
+                        <div class="progress-section" id="global-progress-bar-container">
+                            <div class="progress-header">
+                                <span class="progress-status-subtitle" id="progress-status-subtitle">Processing feeds...</span>
+                                <span class="progress-percentage-text" id="progress-percentage-text">0%</span>
+                            </div>
+                            <div class="progress-bar-wrapper">
+                                <div class="progress-bar-glow"></div>
+                                <div class="progress-bar" id="global-progress-bar"></div>
+                            </div>
                         </div>
                     </section>
 
@@ -144,7 +161,7 @@
                                     <div class="metric-value" id="metric-feeds">-</div>
                                 </div>
                                 <div class="metric-box">
-                                    <div class="metric-name">Jobs Outputted</div>
+                                    <div class="metric-name">Unique Jobs Outputted</div>
                                     <div class="metric-value" id="metric-jobs">-</div>
                                 </div>
                                 <div class="metric-box">
@@ -158,15 +175,18 @@
                             </div>
                         </div>
                         <div class="feed-details-container">
-                            <h3 class="feed-details-title">Feed Details</h3>
-                            <div style="overflow-x: auto;">
+                            <div class="telemetry-header-bar">
+                                <h3 class="feed-details-title">Feed Details Breakdown</h3>
+                                <input type="text" id="search-telemetry-input" class="search-mini" placeholder="Filter telemetry rows...">
+                            </div>
+                            <div class="table-scroll-wrap">
                                 <table class="telemetry-table">
                                     <thead>
                                         <tr>
                                             <th>Feed Source</th>
-                                            <th style="width: 80px;">Size</th>
-                                            <th style="width: 140px;">Jobs (Parsed / Written)</th>
-                                            <th style="width: 100px; text-align: right;">Status</th>
+                                            <th style="width: 85px;">Size</th>
+                                            <th style="width: 150px;">Jobs (Parsed / Written)</th>
+                                            <th style="width: 110px; text-align: right;">Status</th>
                                         </tr>
                                     </thead>
                                     <tbody id="telemetry-table-body">
@@ -192,6 +212,73 @@
         </main>
     </div>
 
+    <!-- Merge Complete Summary Modal -->
+    <div class="modal-overlay" id="merge-complete-modal">
+        <div class="modal-card modal-summary" style="width: 580px;">
+            <div class="modal-header summary-header">
+                <div class="summary-title-wrap">
+                    <div class="success-icon"><i class="fa-solid fa-circle-check"></i></div>
+                    <div>
+                        <h3>Merge Completed Successfully</h3>
+                        <p class="summary-subtitle" id="summary-subtitle">All feed sources processed into output feed.</p>
+                    </div>
+                </div>
+                <button class="btn-close-modal" id="btn-close-summary-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <!-- Highlight Hero Job Count -->
+                <div class="summary-hero-card">
+                    <div class="hero-label">Total Unique Jobs in Merged Feed</div>
+                    <div class="hero-count" id="summary-hero-jobs">0</div>
+                    <div class="hero-subtext">Verified clean records written to output</div>
+                </div>
+
+                <div class="summary-metrics-grid">
+                    <div class="summary-metric">
+                        <span class="sm-label">Feeds Completed</span>
+                        <span class="sm-value" id="summary-feeds-ratio">0 / 0</span>
+                    </div>
+                    <div class="summary-metric">
+                        <span class="sm-label">Duplicates Filtered</span>
+                        <span class="sm-value text-amber" id="summary-duplicates-count">0</span>
+                    </div>
+                    <div class="summary-metric">
+                        <span class="sm-label">Raw Jobs Parsed</span>
+                        <span class="sm-value" id="summary-parsed-count">0</span>
+                    </div>
+                    <div class="summary-metric">
+                        <span class="sm-label">Execution Time</span>
+                        <span class="sm-value text-cyan" id="summary-elapsed-time">0.0s</span>
+                    </div>
+                </div>
+
+                <div class="summary-file-box">
+                    <div class="file-box-icon"><i class="fa-solid fa-file-code"></i></div>
+                    <div class="file-box-info">
+                        <div class="file-box-name" id="summary-output-filename">merged.xml</div>
+                        <div class="file-box-path" id="summary-output-path">output/merged.xml</div>
+                    </div>
+                    <div class="file-box-size" id="summary-file-size">0 MB</div>
+                </div>
+
+                <!-- Failed Feeds Section if any -->
+                <div class="failed-feeds-section hidden" id="failed-feeds-section">
+                    <div class="failed-header" id="failed-header-toggle">
+                        <span><i class="fa-solid fa-triangle-exclamation"></i> <span id="failed-count-label">0 Feeds Failed</span></span>
+                        <i class="fa-solid fa-chevron-down" id="failed-chevron"></i>
+                    </div>
+                    <div class="failed-list-wrapper hidden" id="failed-list-wrapper">
+                        <ul class="failed-list" id="failed-list"></ul>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer summary-footer">
+                <button class="btn btn-secondary" id="btn-copy-summary-path"><i class="fa-solid fa-copy"></i> Copy Path</button>
+                <button class="btn btn-primary" id="btn-open-summary-file"><i class="fa-solid fa-folder-open"></i> Open Merged File</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Add Source Modal Overlay -->
     <div class="modal-overlay" id="add-source-modal">
         <div class="modal-card" style="width: 540px;">
@@ -199,40 +286,43 @@
                 <h3><i class="fa-solid fa-plus-circle"></i> Add Feed Source</h3>
                 <button class="btn-close-modal" id="btn-close-modal"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <div class="modal-body" style="gap: 16px;">
-                <div class="form-group-modal">
-                    <label for="modal-feed-type">Acquisition Method</label>
-                    <select id="modal-feed-type" style="width: 100%; background: #090d16; border: 1px solid var(--card-border); color: var(--text-primary); padding: 10px 14px; border-radius: 8px; font-size: 13px; outline: none; transition: var(--transition-smooth); cursor: pointer;">
-                        <option value="url">URL Feed (HTTP/HTTPS)</option>
-                        <option value="file">Local XML File</option>
-                        <option value="sftp">SFTP Server Pull</option>
-                        <option value="api">Secure REST API Endpoint</option>
-                        <option value="bulk">Bulk Import (Paste List)</option>
+            <div class="modal-body">
+                <!-- Dropdown for feed type selector -->
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label for="modal-feed-type" style="font-weight: 600; margin-bottom: 6px; display: block;">Feed Source Type</label>
+                    <select id="modal-feed-type" class="modal-select">
+                        <option value="url">🌐 Public Feed URL (HTTP / HTTPS)</option>
+                        <option value="file">📁 Local XML / GZ File</option>
+                        <option value="sftp">🔒 SFTP Remote Server</option>
+                        <option value="api">🛡️ Authenticated Secure API</option>
+                        <option value="bulk">📋 Bulk Import (Multiple URLs/Paths)</option>
                     </select>
                 </div>
-                
+
                 <!-- URL input section -->
                 <div class="modal-input-section" id="section-url-input">
-                    <label for="modal-input-url">Feed URL</label>
-                    <input type="text" id="modal-input-url" placeholder="https://example.com/jobs.xml" style="width: 100%;">
-                    <span class="input-tip">Must start with http:// or https://</span>
+                    <label for="modal-input-url">Feed Endpoint URL</label>
+                    <input type="text" id="modal-input-url" placeholder="https://example.com/jobs_feed.xml" style="width: 100%;">
+                    <span class="input-tip">Supports XML and JSON endpoints with automatic decompression.</span>
                 </div>
-                
-                <!-- File input section -->
+
+                <!-- Local File input section -->
                 <div class="modal-input-section hidden" id="section-file-input">
-                    <label>Local XML File</label>
-                    <div class="file-picker-trigger" id="modal-file-picker-btn" style="width: 100%;">
-                        <i class="fa-solid fa-folder-open"></i>
-                        <span>Select file from computer</span>
+                    <label>Local Feed Document</label>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <button class="btn btn-secondary btn-sm" id="modal-file-picker-btn" style="white-space: nowrap;">
+                            <i class="fa-solid fa-folder-open"></i> Choose Files...
+                        </button>
+                        <span class="selected-file-label" id="selected-file-label" style="font-size: 12px; color: var(--text-secondary); text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">No files selected</span>
                     </div>
-                    <div class="selected-file-label" id="selected-file-label">No files selected</div>
+                    <span class="input-tip">Select one or more .xml, .json, or .xml.gz files from your hard drive.</span>
                 </div>
 
                 <!-- SFTP input section -->
                 <div class="modal-input-section hidden" id="section-sftp-input">
                     <div style="display: grid; grid-template-columns: 3fr 1fr; gap: 12px; margin-bottom: 8px;">
                         <div>
-                            <label for="sftp-host">Host / Server IP</label>
+                            <label for="sftp-host">Host / IP</label>
                             <input type="text" id="sftp-host" placeholder="sftp.example.com" style="width: 100%;">
                         </div>
                         <div>
@@ -250,9 +340,9 @@
                             <input type="password" id="sftp-pass" placeholder="••••••••" style="width: 100%;">
                         </div>
                     </div>
-                    <div>
+                    <div style="margin-bottom: 8px;">
                         <label for="sftp-path">Remote File Path</label>
-                        <input type="text" id="sftp-path" placeholder="/incoming/feeds/jobs.xml" style="width: 100%;">
+                        <input type="text" id="sftp-path" placeholder="/feeds/partner_export.xml" style="width: 100%;">
                     </div>
                 </div>
 
@@ -260,22 +350,22 @@
                 <div class="modal-input-section hidden" id="section-api-input">
                     <div style="margin-bottom: 8px;">
                         <label for="api-url">API Endpoint URL</label>
-                        <input type="text" id="api-url" placeholder="https://api.example.com/v1/jobs" style="width: 100%;">
+                        <input type="text" id="api-url" placeholder="https://api.example.com/v1/jobs/export" style="width: 100%;">
                     </div>
                     <div style="margin-bottom: 8px;">
                         <label for="api-auth-type">Authentication Method</label>
-                        <select id="api-auth-type" style="width: 100%; background: #090d16; border: 1px solid var(--card-border); color: var(--text-primary); padding: 10px 14px; border-radius: 8px; font-size: 13px; outline: none; transition: var(--transition-smooth); cursor: pointer;">
-                            <option value="none">No Authorization</option>
+                        <select id="api-auth-type" style="width: 100%;">
+                            <option value="none">None / Public</option>
                             <option value="bearer">Bearer Token</option>
-                            <option value="api_key">API Key Header</option>
-                            <option value="oauth2">OAuth2 Client Credentials</option>
+                            <option value="api_key">API Key (Custom Header)</option>
+                            <option value="oauth2">OAuth2 (Client Credentials)</option>
                         </select>
                     </div>
                     
-                    <!-- Bearer Token fields -->
+                    <!-- Bearer Token field -->
                     <div id="api-bearer-fields" class="api-auth-fields hidden" style="margin-bottom: 8px;">
-                        <label for="api-token">Authorization Token</label>
-                        <input type="password" id="api-token" placeholder="Bearer Token..." style="width: 100%;">
+                        <label for="api-token">Bearer Token</label>
+                        <input type="password" id="api-token" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI..." style="width: 100%;">
                     </div>
                     
                     <!-- API Key fields -->
@@ -311,9 +401,22 @@
 
                 <!-- Bulk input section -->
                 <div class="modal-input-section hidden" id="section-bulk-input">
-                    <label for="modal-input-bulk">Bulk Feed Sources (One URL/path per line)</label>
-                    <textarea id="modal-input-bulk" placeholder="Paste your URLs or paths here (one per line):&#10;https://example.com/feed1.xml&#10;C:/feeds/local_feed.xml" rows="8" style="width: 100%; font-family: monospace; font-size: 12px; resize: vertical;"></textarea>
-                    <span class="input-tip">Lines starting with http:// or https:// are added as URLs, others as local files.</span>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <label for="modal-input-bulk" style="margin: 0;">Bulk Feed Sources (Any Format / Any Delimiters)</label>
+                        <div class="bulk-stats-bar" id="bulk-stats-bar">
+                            <span class="bulk-badge" id="bulk-badge-total">0 items</span>
+                            <span class="bulk-badge badge-blue" id="bulk-badge-urls">0 URLs</span>
+                            <span class="bulk-badge badge-green" id="bulk-badge-files">0 Files</span>
+                        </div>
+                    </div>
+                    <textarea id="modal-input-bulk" placeholder="Paste single or multiple URLs / file paths here:&#10;&#10;• Separated by space, comma, semicolon, or newlines&#10;• Python lists ['https://...', 'https://...'] or JSON&#10;• Glued URLs: https://a.com/feed.xmlhttps://b.com/feed.xml" rows="7" style="width: 100%; font-family: var(--font-mono); font-size: 11.5px; resize: vertical;"></textarea>
+                    <span class="input-tip">Auto-detects and extracts all valid URLs and local file paths across any delimiters.</span>
+                    
+                    <!-- Live Extracted Preview Chips -->
+                    <div class="bulk-preview-wrap" id="bulk-preview-wrap" style="display: none;">
+                        <div class="bulk-preview-title">Extracted Sources Preview (<span id="bulk-preview-count">0</span>):</div>
+                        <div class="bulk-preview-list" id="bulk-preview-list"></div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">

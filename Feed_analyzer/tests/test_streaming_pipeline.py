@@ -1,0 +1,125 @@
+import os
+import tempfile
+import unittest
+import json
+import duckdb
+from config import BASE_DIR
+from parser import stream_xml_records, stream_json_records
+from analyzer import FeedAnalyzerDb, get_analytics_connection
+from filters import compile_filters
+
+class TestStreamingPipeline(unittest.TestCase):
+    def setUp(self):
+        # Create a temporary directory for databases and logs
+        self.test_dir = tempfile.TemporaryDirectory()
+        self.db_path = os.path.join(self.test_dir.name, "test_task.db")
+        self.duckdb_path = os.path.join(self.test_dir.name, "test_task.duckdb")
+        self.reject_log_path = os.path.join(self.test_dir.name, "test_reject.log")
+
+    def tearDown(self):
+        self.test_dir.cleanup()
+
+    def test_xml_streaming_and_reject_logging(self):
+        # 1. Test non-strict mode: empty document writes to reject log
+        xml_content = b""
+        
+        feed_file = os.path.join(self.test_dir.name, "feed.xml")
+        with open(feed_file, "wb") as f:
+            f.write(xml_content)
+
+        with open(feed_file, "rb") as f:
+            records = list(stream_xml_records(
+                f, 
+                "job", 
+                reject_log_path=self.reject_log_path, 
+                strict_mode=False
+            ))
+
+        self.assertEqual(len(records), 0)
+        self.assertTrue(os.path.exists(self.reject_log_path))
+        with open(self.reject_log_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+            self.assertTrue(len(lines) >= 1)
+            self.assertIn("Parser level XML syntax error", lines[0])
+
+        # 2. Test strict mode: malformed text raises exception
+        with open(feed_file, "rb") as f:
+            with self.assertRaises(Exception):
+                list(stream_xml_records(
+                    f, 
+                    "job", 
+                    strict_mode=True
+                ))
+
+    def test_json_streaming_and_reject_logging(self):
+        # 1. Test non-strict mode JSON parsing error logs to reject log
+        json_content = b"This is not JSON at all"
+        
+        feed_file = os.path.join(self.test_dir.name, "feed.json")
+        with open(feed_file, "wb") as f:
+            f.write(json_content)
+
+        with open(feed_file, "rb") as f:
+            records = list(stream_json_records(
+                f, 
+                "item", 
+                reject_log_path=self.reject_log_path, 
+                strict_mode=False
+            ))
+
+        self.assertEqual(len(records), 0)
+        
+        # 2. Test strict mode raises exception
+        with open(feed_file, "rb") as f:
+            with self.assertRaises(Exception):
+                list(stream_json_records(
+                    f, 
+                    "item", 
+                    strict_mode=True
+                ))
+
+    def test_duckdb_ingest_and_indexing(self):
+        # Initialize analyzer db
+        db = FeedAnalyzerDb(self.db_path)
+        db.open()
+
+        # Insert some records
+        records_batch = [
+            ({"title": "Frontend Engineer", "company": "Vercel", "Location": {"City": "NY"}}, "raw1"),
+            ({"title": "Backend Engineer", "company": "Supabase", "Location": {"City": "SF"}}, "raw2")
+        ]
+        
+        db.insert_records(records_batch)
+        db.create_indexes()
+        db.close()
+
+        # Connect to DuckDB analytics connection
+        conn = get_analytics_connection(self.db_path)
+        
+        # Test basic count
+        res = conn.execute("SELECT COUNT(*) as cnt FROM records").fetchone()
+        self.assertEqual(res[0], 2)
+        conn.close() # Close first to release the DuckDB file lock
+
+        # Test dynamic column queries (location city mapping)
+        db = FeedAnalyzerDb(self.db_path)
+        col_city = db.field_mappings.get("Location/City")
+        col_company = db.field_mappings.get("company")
+        self.assertIsNotNone(col_city)
+
+        # Test compiled filter queries
+        where_sql, params = compile_filters([
+            {"field": "Location/City", "operator": "Equals", "value": "SF"}
+        ], db.field_mappings)
+
+        # Re-open connection to query
+        conn = get_analytics_connection(self.db_path)
+        query = f"SELECT {col_company} FROM records WHERE {where_sql}"
+        row = conn.execute(query, params).fetchone()
+        self.assertEqual(row[0], "Supabase")
+        
+        conn.close()
+        db.close()
+
+if __name__ == '__main__':
+    unittest.main()

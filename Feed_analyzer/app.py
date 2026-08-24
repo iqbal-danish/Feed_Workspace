@@ -13,10 +13,10 @@ from werkzeug.utils import secure_filename
 import config
 from utils import configure_logging, get_memory_usage_mb, format_size, ProgressEstimator
 from parser import stream_xml_records, stream_json_records, get_url_stream, detect_xml_job_element, detect_json_record_path
-from analyzer import FeedAnalyzerDb, get_db_connection
+from analyzer import FeedAnalyzerDb, get_analytics_connection, get_db_connection
 from filters import compile_filters
 from search import compile_search
-from statistics import get_field_stats, get_multi_group_by, get_global_statistics
+from statistics import get_field_stats, get_multi_group_by, get_global_statistics, precache_field_stats
 from duplicates import find_duplicates
 from reports import generate_missing_value_report, generate_duplicate_summary
 from exporters import (
@@ -65,23 +65,26 @@ def csv_download_response(df, download_name):
     headers = {"Content-Disposition": f'attachment; filename="{download_name}"'}
     return Response(csv_bytes, mimetype="text/csv", headers=headers)
 
-def get_recent_feeds():
-    """Reads available database files and returns their cached metadata."""
+def get_recent_feeds() -> List[Dict[str, Any]]:
+    """Returns a list of recently analyzed feed database metadata."""
     feeds = []
     if not os.path.exists(config.DB_FOLDER):
-        return []
-    for filename in os.listdir(config.DB_FOLDER):
-        if filename.endswith(".db"):
-            task_id = filename[:-3]
-            db_path = os.path.join(config.DB_FOLDER, filename)
+        return feeds
+        
+    for fname in os.listdir(config.DB_FOLDER):
+        if fname.endswith('.db'):
+            task_id = fname[:-3]
+            db_path = os.path.join(config.DB_FOLDER, fname)
             try:
                 db = FeedAnalyzerDb(db_path)
                 meta = db.get_metadata()
+                db.close()
                 if meta:
                     meta["task_id"] = task_id
                     feeds.append(meta)
             except Exception as e:
-                logger.error(f"Error loading metadata for {filename}: {e}")
+                logger.error(f"Error loading metadata for {fname}: {e}")
+                
     return sorted(feeds, key=lambda x: x.get("filename", ""))
 
 def run_parsing_task(
@@ -89,25 +92,83 @@ def run_parsing_task(
     source_path_or_url: str,
     is_url: bool,
     job_element_or_path: str,
-    original_filename: str
+    original_filename: str,
+    skip_description: bool = True,
+    store_raw_content: bool = False
 ) -> None:
     """Background thread function that parses the feed and populates the SQLite database."""
-    logger.info(f"Starting parsing task {task_id} for {original_filename}")
+    logger.info(f"Starting parsing task {task_id} for {original_filename} (skip_description={skip_description}, store_raw_content={store_raw_content})")
     stream = None
     db = None
     try:
-        # 1. Open stream and get total size
+        # 1. High-speed multi-threaded download for URL sources
         if is_url:
-            stream, total_size = get_url_stream(source_path_or_url, config.DEFAULT_TIMEOUT_SECONDS)
-            file_type = "xml" if "xml" in source_path_or_url.lower() else "json"
+            with tasks_lock:
+                parsing_tasks[task_id].update({
+                    "status": "downloading feed (parallel streams)",
+                    "job_element": job_element_or_path
+                })
+
+            download_target_path = os.path.join(config.UPLOAD_FOLDER, f"{task_id}_{secure_filename(original_filename)}")
+            
+            def dl_progress(downloaded_bytes, total_bytes, speed_mb, eta_s):
+                pct = (downloaded_bytes / total_bytes * 100.0) if total_bytes > 0 else 0.0
+                with tasks_lock:
+                    parsing_tasks[task_id].update({
+                        "status": "downloading feed (parallel streams)",
+                        "bytes_read": downloaded_bytes,
+                        "percentage": round(pct, 2),
+                        "speed": round(speed_mb * 1000, 1),
+                        "eta_seconds": round(eta_s, 1) if eta_s else None,
+                        "memory_mb": round(get_memory_usage_mb(), 2)
+                    })
+
+            try:
+                source_path_or_url = download_file_fast(
+                    url=source_path_or_url,
+                    output_path=download_target_path,
+                    num_threads=8,
+                    progress_callback=dl_progress
+                )
+                is_url = False
+            except Exception as e_dl:
+                logger.warning(f"Parallel download fallback to direct stream: {e_dl}")
+
+        if is_url:
+            raw_stream, total_size = get_url_stream(source_path_or_url, config.DEFAULT_TIMEOUT_SECONDS)
+            # Peek first 500 bytes to check content
+            peek_data = raw_stream.read(500) if raw_stream else b""
+            stream = PeekableStream(raw_stream, peek_data)
+            
+            peek_str = peek_data.decode('utf-8', errors='ignore').strip().lower()
+            if peek_str.startswith('<?xml') or peek_str.startswith('<') or '<xml' in peek_str:
+                file_type = "xml"
+            elif peek_str.startswith('{') or peek_str.startswith('['):
+                file_type = "json"
+            else:
+                # Fallback to headers or URL path match
+                content_type = stream.headers.get('Content-Type', '').lower() if hasattr(stream, 'headers') else ''
+                if 'xml' in content_type:
+                    file_type = "xml"
+                elif 'json' in content_type:
+                    file_type = "json"
+                else:
+                    file_type = "xml" if "xml" in source_path_or_url.lower() else "json"
         else:
             total_size = os.path.getsize(source_path_or_url)
             stream = open(source_path_or_url, 'rb')
-            file_type = "xml" if source_path_or_url.lower().endswith('.xml') else "json"
+            file_type = "xml" if source_path_or_url.lower().endswith(('.xml', '.xml.gz')) else "json"
 
         # 2. Setup SQLite Cache
         db_path = os.path.join(config.DB_FOLDER, f"{task_id}.db")
         db = FeedAnalyzerDb(db_path)
+        # Update initial task info to "reading file"
+        with tasks_lock:
+            parsing_tasks[task_id].update({
+                "job_element": job_element_or_path,
+                "file_type": file_type.upper(),
+                "status": "reading file"
+            })
 
         # 3. Auto-detect job element/path if set to Auto
         if not job_element_or_path or job_element_or_path.lower() == "auto":
@@ -119,11 +180,11 @@ def run_parsing_task(
             else:
                 job_element_or_path = "job" if file_type == "xml" else "item"
 
-        # Update initial task info
+        # Update stage to "ingesting rows"
         with tasks_lock:
             parsing_tasks[task_id].update({
                 "job_element": job_element_or_path,
-                "file_type": file_type.upper()
+                "status": "ingesting rows"
             })
 
         # 4. Initialize progress estimator
@@ -139,17 +200,28 @@ def run_parsing_task(
                     "memory_mb": round(get_memory_usage_mb(), 2)
                 })
 
-        # 5. Determine correct generator
+        # 5. Determine correct generator and setup reject logging
+        reject_log_path = os.path.join(config.REJECT_FOLDER, f"{task_id}.reject.log")
         if file_type == "xml":
-            records_gen = stream_xml_records(stream, job_element_or_path, progress_callback)
+            records_gen = stream_xml_records(
+                stream, job_element_or_path, progress_callback, reject_log_path,
+                strict_mode=False, store_raw_content=store_raw_content
+            )
         else:
-            records_gen = stream_json_records(stream, job_element_or_path, progress_callback)
+            records_gen = stream_json_records(
+                stream, job_element_or_path, progress_callback, reject_log_path,
+                strict_mode=False, store_raw_content=store_raw_content
+            )
 
         # 6. Stream parse and insert in batches
         batch = []
         start_time = time.time()
         
         for record_dict, raw_content in records_gen:
+            if skip_description:
+                for k in list(record_dict.keys()):
+                    if 'description' in k.lower():
+                        del record_dict[k]
             batch.append((record_dict, raw_content))
             estimator.update(1, estimator.processed_bytes)
             
@@ -172,6 +244,22 @@ def run_parsing_task(
         if stream:
             stream.close()
 
+        # 6b. Post-load indexing
+        with tasks_lock:
+            parsing_tasks[task_id].update({
+                "status": "building indexes"
+            })
+        db.create_indexes()
+
+        # 6c. Count validation and reconciliation metrics
+        rejected_count = 0
+        if os.path.exists(reject_log_path):
+            try:
+                with open(reject_log_path, 'r', encoding='utf-8', errors='ignore') as rf:
+                    rejected_count = sum(1 for _ in rf)
+            except Exception:
+                pass
+
         # 7. Collect and save metadata
         elapsed = time.time() - start_time
         metadata = {
@@ -183,11 +271,20 @@ def run_parsing_task(
             "job_element": job_element_or_path,
             "total_jobs": str(estimator.processed_records),
             "total_fields": str(len(db.field_mappings)),
+            "records_seen": str(estimator.processed_records + rejected_count),
+            "records_inserted": str(estimator.processed_records),
+            "records_rejected": str(rejected_count),
             "memory_used": format_size(get_memory_usage_mb() * 1024 * 1024),
             "average_job_size": f"{(total_size / estimator.processed_records):.2f} B" if estimator.processed_records > 0 and total_size else "Unknown",
             "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         db.save_metadata(metadata)
+
+        # Pre-cache top field statistics in background for instant dashboard clicks
+        try:
+            precache_field_stats(db_path, db.field_mappings)
+        except Exception as e_cache:
+            logger.warning(f"Field stats pre-caching warning: {e_cache}")
 
         with tasks_lock:
             parsing_tasks[task_id].update({
@@ -229,6 +326,10 @@ def analyze():
     """Triggers background feed parsing."""
     source_type = request.form.get('source_type')
     job_element = request.form.get('job_element', 'auto').strip()
+    ingestion_mode = request.form.get('ingestion_mode', config.MODE_EXTREME_FAST).strip().lower()
+    
+    skip_description = ingestion_mode in (config.MODE_EXTREME_FAST, config.MODE_FAST)
+    store_raw_content = ingestion_mode != config.MODE_EXTREME_FAST
     
     task_id = str(uuid.uuid4())
     is_url = False
@@ -277,7 +378,7 @@ def analyze():
     # Start background thread
     t = threading.Thread(
         target=run_parsing_task,
-        args=(task_id, source_path, is_url, job_element, filename)
+        args=(task_id, source_path, is_url, job_element, filename, skip_description, store_raw_content)
     )
     t.daemon = True
     t.start()
@@ -358,7 +459,7 @@ def field_values(task_id):
     if not col_name:
         return jsonify({"error": f"Field '{field_path}' not found in mappings"}), 404
         
-    conn = get_db_connection(db_path)
+    conn = get_analytics_connection(db_path)
     try:
         query = f"""
             SELECT {col_name} as val, COUNT(*) as cnt
@@ -397,10 +498,11 @@ def export_field_values(task_id):
     try:
         metadata = db.get_metadata()
         query = f"""
-            SELECT {col_name} as [Value], COUNT(*) as [Count]
+            SELECT {col_name} as Value, COUNT(*) as Count
             FROM records
+            WHERE {col_name} IS NOT NULL AND {col_name} != ''
             GROUP BY {col_name}
-            ORDER BY [Count] DESC
+            ORDER BY Count DESC
         """
         df = pd.read_sql_query(query, conn)
 
@@ -447,7 +549,7 @@ def run_query(task_id):
         
     where_sql = " AND ".join(where_parts)
 
-    conn = get_db_connection(db_path)
+    conn = get_analytics_connection(db_path)
     try:
         # Check if group by is active
         if group_by_fields:

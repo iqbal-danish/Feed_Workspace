@@ -60,11 +60,11 @@ def compile_single_filter(col_name: str, op: str, val: str) -> Tuple[str, List[A
         # Handle SQLite's behavior where NULL values don't match standard inequality operators
         return f"({col_name} != ? OR {col_name} IS NULL)", [val]
     elif op_lower == "contains":
-        return f"{col_name} LIKE ?", [f"%{val}%"]
+        return f"{col_name} ILIKE ?", [f"%{val}%"]
     elif op_lower == "startswith":
-        return f"{col_name} LIKE ?", [f"{val}%"]
+        return f"{col_name} ILIKE ?", [f"{val}%"]
     elif op_lower == "endswith":
-        return f"{col_name} LIKE ?", [f"%{val}"]
+        return f"{col_name} ILIKE ?", [f"%{val}"]
     elif op_lower == "greaterthan":
         try:
             # Try to cast to float to support numeric comparisons
@@ -98,7 +98,7 @@ def compile_single_filter(col_name: str, op: str, val: str) -> Tuple[str, List[A
         else:
             return f"({col_name} NOT IN ({placeholders}) OR {col_name} IS NULL)", items
     elif op_lower == "regex":
-        return f"{col_name} REGEXP ?", [val]
+        return f"regexp_matches({col_name}, ?, 'i')", [val]
     else:
         logger.warning(f"Unknown filter operator: {op}")
         return "", []

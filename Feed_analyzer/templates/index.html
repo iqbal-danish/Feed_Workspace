@@ -9,7 +9,7 @@
     <!-- Bootstrap Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.min.css" rel="stylesheet">
     <!-- Custom Style -->
-    <link href="{{ url_for('static', filename='css/style.css') }}?v=1.0.3" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}?v=1.0.4" rel="stylesheet">
 </head>
 <body class="position-relative">
     <div class="bg-glow-1"></div>
@@ -81,6 +81,21 @@
                             <div class="form-text text-muted">Keep "Auto" to automatically discover repeating records.</div>
                         </div>
 
+                        <!-- Ingestion Mode Preset Selector -->
+                        <div class="mb-4 p-3 rounded" style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color);">
+                            <label for="ingestion_mode" class="form-label text-white fw-bold">
+                                <i class="bi bi-speedometer2 text-warning me-1"></i> Ingestion Mode Preset
+                            </label>
+                            <select class="form-select text-white" id="ingestion_mode" name="ingestion_mode" style="background: rgba(0,0,0,0.4); border-color: var(--border-color);">
+                                <option value="extreme" selected>🚀 Extreme Fast Mode (~15,000+ rec/s - Skip Descriptions & Raw XML)</option>
+                                <option value="fast">⚡ Fast Mode (~7,500 rec/s - Skip Descriptions, Retain Raw XML)</option>
+                                <option value="full">🔍 Full Inspection Mode (~4,000 rec/s - Retain All HTML Descriptions)</option>
+                            </select>
+                            <div class="form-text text-muted mt-2" style="font-size: 0.8rem;">
+                                Extreme Fast Mode bypasses XML string re-serialization and discards heavy HTML description blocks for max speed & minimal memory usage.
+                            </div>
+                        </div>
+
                         <!-- Submit Button -->
                         <button type="submit" class="btn btn-primary w-100 py-3" id="submitBtn">
                             <i class="bi bi-play-circle-fill me-2"></i>Analyze Feed
@@ -149,7 +164,7 @@
                         <!-- Stats Grid -->
                         <div class="row g-2 border-top border-secondary border-opacity-25 pt-3" style="font-size: 0.85rem;">
                             <div class="col-4 border-end border-secondary border-opacity-25">
-                                <div class="text-secondary">Speed</div>
+                                <div class="text-secondary" id="progressSpeedLabel">Speed</div>
                                 <div class="fw-bold text-white mt-1" id="progressSpeed">0 rec/s</div>
                             </div>
                             <div class="col-4 border-end border-secondary border-opacity-25">
@@ -251,14 +266,32 @@
                 fetch('/api/progress/' + taskId)
                     .then(res => res.json())
                     .then(data => {
-                        if (data.status === 'processing') {
+                        if (data.status === 'processing' || data.status === 'reading file' || data.status === 'ingesting rows' || data.status === 'building indexes' || (data.status && data.status.includes('downloading'))) {
                             // Update progress bar
                             document.getElementById('progressBarFill').style.width = data.percentage + "%";
                             document.getElementById('progressPercent').innerText = data.percentage + "% Complete";
                             document.getElementById('progressRecords').innerText = data.records_count + " records processed";
-                            document.getElementById('progressSpeed').innerText = data.speed + " rec/s";
                             document.getElementById('progressEta').innerText = data.eta_seconds !== null ? data.eta_seconds + " s" : "Calculating...";
                             document.getElementById('progressMemory').innerText = data.memory_mb + " MB";
+
+                            // Dynamically update title and speed unit based on status
+                            if (data.status && data.status.includes('downloading')) {
+                                document.getElementById('progressTitle').innerText = "Downloading Feed (8 Parallel Streams)...";
+                                document.getElementById('progressSpeedLabel').innerText = "Download Speed";
+                                document.getElementById('progressSpeed').innerText = (data.speed / 1000).toFixed(1) + " MB/s";
+                            } else {
+                                document.getElementById('progressSpeedLabel').innerText = "Speed";
+                                document.getElementById('progressSpeed').innerText = data.speed + " rec/s";
+                                if (data.status === 'reading file') {
+                                    document.getElementById('progressTitle').innerText = "Reading File...";
+                                } else if (data.status === 'building indexes') {
+                                    document.getElementById('progressTitle').innerText = "Building Indexes...";
+                                } else if (data.status === 'ingesting rows') {
+                                    document.getElementById('progressTitle').innerText = "Ingesting Rows...";
+                                } else {
+                                    document.getElementById('progressTitle').innerText = "Analyzing Feed...";
+                                }
+                            }
                         } 
                         else if (data.status === 'completed') {
                             clearInterval(intervalId);

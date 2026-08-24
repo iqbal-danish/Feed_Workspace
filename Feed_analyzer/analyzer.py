@@ -5,6 +5,79 @@ import json
 import logging
 from typing import Dict, Any, List, Tuple, Optional
 import config
+import duckdb
+
+class DictRow:
+    """A wrapper for database result rows that allows access by both column index and column name."""
+    def __init__(self, values: tuple, description: list):
+        self._values = values
+        self._mapping = {desc[0].lower(): i for i, desc in enumerate(description)} if description else {}
+
+    def __getitem__(self, key: Any) -> Any:
+        if isinstance(key, str):
+            idx = self._mapping.get(key.lower())
+            if idx is not None:
+                return self._values[idx]
+            raise KeyError(f"Column '{key}' not found in row mappings.")
+        return self._values[key]
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+    def __repr__(self) -> str:
+        return repr(self._values)
+
+    def keys(self) -> List[str]:
+        return list(self._mapping.keys())
+
+class DuckDBConnectionWrapper:
+    """Wrapper around duckdb connection to emulate SQLite dict row factory."""
+    def __init__(self, conn: duckdb.DuckDBPyConnection):
+        self._conn = conn
+
+    def execute(self, query: str, params: Optional[list] = None) -> 'DuckDBCursorWrapper':
+        if params is not None:
+            res = self._conn.execute(query, params)
+        else:
+            res = self._conn.execute(query)
+        return DuckDBCursorWrapper(res)
+
+    def close(self) -> None:
+        self._conn.close()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
+
+class DuckDBCursorWrapper:
+    def __init__(self, relation: Any):
+        self._relation = relation
+        self._description = relation.description
+
+    def fetchone(self) -> Optional[DictRow]:
+        row = self._relation.fetchone()
+        if row is None:
+            return None
+        return DictRow(row, self._description)
+
+    def fetchall(self) -> List[DictRow]:
+        rows = self._relation.fetchall()
+        return [DictRow(r, self._description) for r in rows]
+
+    @property
+    def description(self) -> list:
+        return self._description
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._relation, name)
+
+def get_analytics_connection(db_path: str):
+    """Returns a wrapped DuckDB in-memory connection attached to the SQLite database for ultra-fast vectorized OLAP querying."""
+    conn = duckdb.connect(":memory:")
+    conn.execute("INSTALL sqlite; LOAD sqlite;")
+    abs_p = os.path.abspath(db_path).replace("\\", "/")
+    conn.execute(f"ATTACH '{abs_p}' AS sqlite_db (TYPE SQLITE)")
+    conn.execute("SET search_path = 'sqlite_db'")
+    return DuckDBConnectionWrapper(conn)
 
 logger = logging.getLogger(__name__)
 
@@ -18,17 +91,20 @@ def regexp(expr: str, item: Optional[str]) -> bool:
         return False
 
 def get_db_connection(db_path: str) -> sqlite3.Connection:
-    """Returns a SQLite connection with custom functions and dict row factory."""
+    """Returns a SQLite connection with high-speed memory-mapped I/O pragmas and dict row factory."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.create_function("REGEXP", 2, regexp)
-    # Enable Write-Ahead Log (WAL) mode for better concurrency and write speed
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA synchronous = OFF")
+    conn.execute("PRAGMA journal_mode = MEMORY")
+    conn.execute("PRAGMA temp_store = MEMORY")
+    conn.execute("PRAGMA page_size = 65536")
+    conn.execute("PRAGMA cache_size = -64000")
+    conn.execute("PRAGMA mmap_size = 30000000000")
     return conn
 
 class FeedAnalyzerDb:
-    """Handles SQLite database schema, dynamic columns, and batch inserts."""
+    """Handles high-throughput SQLite schema initialization, dynamic columns, and streaming commits."""
     def __init__(self, db_path: str):
         self.db_path = db_path
         self.conn: Optional[sqlite3.Connection] = None
@@ -37,18 +113,17 @@ class FeedAnalyzerDb:
         self._init_db()
 
     def _init_db(self) -> None:
-        """Initializes system tables in the SQLite database."""
+        """Initializes system tables in the high-speed SQLite database."""
         conn = sqlite3.connect(self.db_path)
         try:
-            # Create system metadata table
+            conn.execute("PRAGMA synchronous = OFF")
+            conn.execute("PRAGMA journal_mode = MEMORY")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS feed_info (
                     key TEXT PRIMARY KEY,
                     value TEXT
                 )
             """)
-            
-            # Create schema mapping table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS field_mappings (
                     field_path TEXT PRIMARY KEY,
@@ -56,8 +131,6 @@ class FeedAnalyzerDb:
                     field_type TEXT
                 )
             """)
-            
-            # Create records table (starts with primary key and raw content)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS records (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,7 +145,7 @@ class FeedAnalyzerDb:
         self._load_mappings()
 
     def open(self) -> None:
-        """Opens database connection for transactions."""
+        """Opens database connections for transactions."""
         if not self.conn:
             self.conn = get_db_connection(self.db_path)
 
@@ -107,69 +180,79 @@ class FeedAnalyzerDb:
             conn.close()
 
     def _add_new_column(self, field_path: str) -> str:
-        """Dynamically adds a column to the records table and maps it."""
+        """Dynamically adds a column to SQLite structure in autocommit mode."""
         col_name = f"col_{self.next_col_index}"
         self.next_col_index += 1
         
-        # Insert mapping first
         assert self.conn is not None
         self.conn.execute(
             "INSERT INTO field_mappings (field_path, column_name, field_type) VALUES (?, ?, ?)",
             (field_path, col_name, "TEXT")
         )
-        
-        # Alter table to add column (Requires transaction to be temporarily committed/paused in SQLite)
-        # SQLite doesn't allow ALTER TABLE inside a transaction on some versions, or it lock-fails.
-        # So we temporarily commit the open transaction, run ALTER, and start a new transaction.
-        self.conn.commit()
         self.conn.execute(f"ALTER TABLE records ADD COLUMN {col_name} TEXT")
-        self.conn.execute("BEGIN")
+        self.conn.commit()
         
         self.field_mappings[field_path] = col_name
         logger.info(f"Added column {col_name} for field path '{field_path}'")
         return col_name
 
     def insert_records(self, records_batch: List[Tuple[Dict[str, Any], str]]) -> None:
-        """Inserts a batch of records, dynamically adding columns as needed."""
+        """Inserts a batch of records into SQLite using O(K) sparse mapping and high-throughput executemany."""
         self.open()
         assert self.conn is not None
         
-        # Start transaction block
-        self.conn.execute("BEGIN")
-        try:
-            for record_dict, raw_content in records_batch:
-                # 1. Flatten the record dictionary
-                flat_data = self._flatten_record(record_dict)
-                
-                # 2. Check for any new fields not in mappings
-                for field_path in flat_data.keys():
-                    if field_path not in self.field_mappings:
-                        self._add_new_column(field_path)
-                
-                # 3. Build insert statement dynamically
-                columns = ["raw_content"]
-                placeholders = ["?"]
-                values: List[Any] = [raw_content]
-                
-                for field_path, val in flat_data.items():
-                    col_name = self.field_mappings[field_path]
-                    columns.append(col_name)
-                    placeholders.append("?")
+        # 1. Identify all new columns in this batch and add them first (outside transaction)
+        new_fields = []
+        for record_dict, _ in records_batch:
+            flat_data = self._flatten_record(record_dict)
+            for field_path in flat_data.keys():
+                if field_path not in self.field_mappings and field_path not in new_fields:
+                    new_fields.append(field_path)
                     
-                    # Convert lists/dicts to JSON strings for robust storage
+        for field_path in new_fields:
+            self._add_new_column(field_path)
+            
+        # 2. Build the fixed columns query for executemany
+        sorted_fields = sorted(self.field_mappings.keys())
+        columns = ["raw_content"] + [self.field_mappings[f] for f in sorted_fields]
+        placeholders = ["?"] * len(columns)
+        query = f"INSERT INTO records ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
+        
+        # Build column index mapping for O(K) sparse row construction
+        field_to_idx = {field: i + 1 for i, field in enumerate(sorted_fields)}
+        num_columns = len(columns)
+        
+        # 3. Prepare parameters for all rows in the batch in O(K) time per record
+        row_values = []
+        for record_dict, raw_content in records_batch:
+            flat_data = self._flatten_record(record_dict)
+            vals = [None] * num_columns
+            vals[0] = raw_content
+            
+            for field_path, val in flat_data.items():
+                idx = field_to_idx.get(field_path)
+                if idx is not None:
                     if isinstance(val, (list, dict)):
-                        values.append(json.dumps(val, ensure_ascii=False))
+                        vals[idx] = json.dumps(val, ensure_ascii=False)
                     else:
-                        values.append(str(val) if val is not None else None)
-                        
-                query = f"INSERT INTO records ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
-                self.conn.execute(query, values)
-                
+                        vals[idx] = str(val) if val is not None else None
+            row_values.append(vals)
+            
+        # 4. Perform high-speed bulk insertion under a single transaction
+        self.conn.execute("BEGIN TRANSACTION")
+        try:
+            self.conn.executemany(query, row_values)
             self.conn.commit()
         except Exception as e:
             self.conn.rollback()
             logger.error(f"Failed inserting record batch: {e}")
             raise e
+
+    def create_indexes(self) -> None:
+        """Finalizes SQLite storage checkpoint."""
+        self.open()
+        assert self.conn is not None
+        self.conn.commit()
 
     def save_metadata(self, metadata: Dict[str, str]) -> None:
         """Saves metadata key-values to feed_info table."""

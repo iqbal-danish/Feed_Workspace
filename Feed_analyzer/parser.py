@@ -67,67 +67,144 @@ def get_url_stream(url: str, timeout: int = 30) -> Tuple[Any, int]:
         raise ValueError(f"Network error: {str(e)}")
 
 def detect_xml_job_element(file_path: str, limit_bytes: int = 5*1024*1024) -> str:
-    """Scans the beginning of an XML file to detect the repeating job element tag."""
-    tags = Counter()
-    depths = {}
-    has_children = set()
-    
+    """Scans the beginning of an XML file to detect the repeating job element tag accurately."""
+    import math
+
+    tag_counts = Counter()
+    tag_depths = {}
+    tag_parents = {}
+    tag_child_tags = {}
+    exact_casing = {}
+
+    ROOT_CONTAINERS = {
+        "root", "root-node", "source", "sources", "jobs", "jobfeed", "feed", "feeds", 
+        "channel", "rss", "document", "results", "response", "data", "catalog", "items",
+        "postings", "vacancies", "openings", "positions", "listings", "records", "array"
+    }
+
+    JOB_KEYWORDS = {
+        "job": 100,
+        "posting": 90,
+        "position": 90,
+        "vacancy": 90,
+        "opening": 90,
+        "opportunity": 85,
+        "listing": 85,
+        "career": 80,
+        "offer": 80,
+        "item": 75,
+        "entry": 75,
+        "record": 70,
+        "requisition": 70,
+        "work": 60,
+    }
+
+    class LimitedReader:
+        def __init__(self, f, limit):
+            self.f = f
+            self.limit = limit
+            self.read_bytes = 0
+        def read(self, size=-1):
+            if self.read_bytes >= self.limit:
+                return b""
+            chunk = self.f.read(min(size, self.limit - self.read_bytes))
+            self.read_bytes += len(chunk)
+            return chunk
+
     with open(file_path, 'rb') as f:
-        class LimitedReader:
-            def __init__(self, f, limit):
-                self.f = f
-                self.limit = limit
-                self.read_bytes = 0
-            def read(self, size=-1):
-                if self.read_bytes >= self.limit:
-                    return b""
-                chunk = self.f.read(min(size, self.limit - self.read_bytes))
-                self.read_bytes += len(chunk)
-                return chunk
-                
         limited_f = LimitedReader(f, limit_bytes)
         try:
-            context = ET.iterparse(limited_f, events=('end',))
+            stack = []
+            context = ET.iterparse(limited_f, events=('start', 'end'))
             for event, elem in context:
-                tag = elem.tag
-                if '}' in tag:
-                    tag = tag.split('}', 1)[1] # Strip namespaces
-                
-                # Element has children, suggesting it is a container/job element
-                if len(elem) > 0:
-                    tags[tag] += 1
-                    has_children.add(tag)
+                raw_tag = elem.tag.split('}', 1)[1] if '}' in elem.tag else elem.tag
+                tag_lower = raw_tag.lower()
+                if tag_lower not in exact_casing:
+                    exact_casing[tag_lower] = raw_tag
+
+                if event == 'start':
+                    depth = len(stack)
+                    parent_tag = stack[-1] if stack else None
+                    stack.append(tag_lower)
                     
-                    # Calculate depth
-                    depth = 0
-                    parent = elem.getparent()
-                    while parent is not None:
-                        depth += 1
-                        parent = parent.getparent()
-                        
-                    if tag not in depths or depth < depths[tag]:
-                        depths[tag] = depth
-                elem.clear()
+                    if parent_tag:
+                        if tag_lower not in tag_parents:
+                            tag_parents[tag_lower] = set()
+                        tag_parents[tag_lower].add(parent_tag)
+
+                        if parent_tag not in tag_child_tags:
+                            tag_child_tags[parent_tag] = set()
+                        tag_child_tags[parent_tag].add(tag_lower)
+
+                    if tag_lower not in tag_depths or depth < tag_depths[tag_lower]:
+                        tag_depths[tag_lower] = depth
+
+                elif event == 'end':
+                    if stack and stack[-1] == tag_lower:
+                        stack.pop()
+                    tag_counts[tag_lower] += 1
+                    
+                    # Only clear shallow elements to keep memory low
+                    if len(stack) <= 1:
+                        elem.clear()
         except Exception:
-            # Parse errors are expected when truncating the file
             pass
 
-    # Find the tag with the highest score: count / (depth + 0.1)
-    # We ignore depth 0 (which is the root tag)
-    best_tag = "job"
-    best_score = -1.0
-    
-    for tag, count in tags.items():
-        if tag in has_children:
-            depth = depths.get(tag, 1)
-            if depth == 0 or depth > 3:
-                continue # Skip root tag and deeply nested child elements (e.g. customfield)
-            score = count / (depth + 0.1)
-            if score > best_score:
-                best_score = score
-                best_tag = tag
-                
-    return best_tag
+    # Score candidates
+    candidates = {}
+    for tag, count in tag_counts.items():
+        depth = tag_depths.get(tag, 1)
+        num_children = len(tag_child_tags.get(tag, set()))
+        
+        # Leaf tags (no children) cannot be the job record container
+        if num_children == 0:
+            continue
+            
+        # Root document tag (depth 0) cannot be the individual job
+        if depth == 0:
+            continue
+
+        score = 0.0
+
+        # Base score from keyword priority
+        score += JOB_KEYWORDS.get(tag, 0)
+
+        # Plural-to-singular parent match (e.g. parent <jobs> -> child <job>, <positions> -> <position>)
+        parents = tag_parents.get(tag, set())
+        for parent in parents:
+            if parent in ROOT_CONTAINERS:
+                score += 50
+            if parent == tag + "s" or parent == tag + "es":
+                score += 80
+
+        # Prefer depth 1 or 2 (top-level records), heavily penalize deeply nested elements (depth >= 3)
+        if depth == 1:
+            score += 40
+        elif depth == 2:
+            score += 35
+        elif depth == 3:
+            score -= 40
+        else:
+            score -= 80
+
+        # Elements with multiple diverse children are much more likely to be the full job record
+        score += min(num_children * 5, 50)
+        
+        # Frequency bonus
+        score += math.log2(count + 1) * 5
+
+        # Penalize if this tag is inside a known job container
+        for parent in parents:
+            if parent in JOB_KEYWORDS:
+                score -= 80
+
+        candidates[tag] = (score, count, depth, num_children)
+
+    if not candidates:
+        return "job"
+
+    best_tag_lower = max(candidates.keys(), key=lambda t: candidates[t][0])
+    return exact_casing.get(best_tag_lower, best_tag_lower)
 
 def detect_json_record_path(file_path: str, limit_bytes: int = 5*1024*1024) -> str:
     """Scans the beginning of a JSON file to detect the repeating record path."""
@@ -201,49 +278,62 @@ def element_to_dict(element: ET._Element) -> Any:
 def stream_xml_records(
     file_obj: Any, 
     job_element_tag: str, 
-    progress_callback: Optional[Callable[[int], None]] = None
+    progress_callback: Optional[Callable[[int], None]] = None,
+    reject_log_path: Optional[str] = None,
+    strict_mode: bool = False,
+    store_raw_content: bool = True
 ) -> Generator[Tuple[Dict[str, Any], str], None, None]:
     """Streams job element records from an XML file-like object."""
     wrapped_file = ProgressFileWrapper(file_obj, progress_callback)
     
     # Enable recovery directly inside iterparse to heal malformed tags
-    context = ET.iterparse(wrapped_file, events=('end',), tag=job_element_tag, recover=True)
-    
-    for event, elem in context:
-        # Convert element to dictionary
-        record_dict = element_to_dict(elem)
-        
-        # Serialize raw XML representation
-        raw_xml = ET.tostring(elem, encoding='utf-8', pretty_print=True).decode('utf-8')
-        
-        yield record_dict, raw_xml
-        
-        # Clear elements to save memory
-        elem.clear()
-        parent = elem.getparent()
-        if parent is not None:
-            while elem.getprevious() is not None:
-                del parent[0]
+    try:
+        context = ET.iterparse(wrapped_file, events=('end',), tag=job_element_tag, recover=not strict_mode)
+        for event, elem in context:
+            record_dict = element_to_dict(elem)
+            raw_xml = ET.tostring(elem, encoding='utf-8', pretty_print=True).decode('utf-8') if store_raw_content else ""
+            yield record_dict, raw_xml
+            
+            elem.clear()
+            parent = elem.getparent()
+            if parent is not None:
+                while elem.getprevious() is not None:
+                    del parent[0]
+    except Exception as exc:
+        if strict_mode:
+            raise
+        if reject_log_path:
+            os.makedirs(os.path.dirname(os.path.abspath(reject_log_path)), exist_ok=True)
+            with open(reject_log_path, "a", encoding="utf-8") as rf:
+                rf.write(f"Parser level XML syntax error: {exc}\n")
+        logger.warning(f"XML parse error encountered: {exc}")
+
 def stream_json_records(
     file_obj: Any, 
     record_path: str, 
-    progress_callback: Optional[Callable[[int], None]] = None
+    progress_callback: Optional[Callable[[int], None]] = None,
+    reject_log_path: Optional[str] = None,
+    strict_mode: bool = False,
+    store_raw_content: bool = True
 ) -> Generator[Tuple[Dict[str, Any], str], None, None]:
     """Streams record items from a JSON file-like object using ijson."""
     wrapped_file = ProgressFileWrapper(file_obj, progress_callback)
     
-    # ijson.items yields dictionary objects directly
-    items = ijson.items(wrapped_file, record_path)
-    
-    for item in items:
-        # Standardize record representation (must be a dictionary)
-        if not isinstance(item, dict):
-            # Wrap primitives in a dictionary
-            record_dict = {"value": item}
-        else:
-            record_dict = item
-            
-        # Serialize raw JSON string representation
-        raw_json = json.dumps(item, indent=2, ensure_ascii=False)
-        
-        yield record_dict, raw_json
+    try:
+        items = ijson.items(wrapped_file, record_path)
+        for item in items:
+            if not isinstance(item, dict):
+                record_dict = {"value": item}
+            else:
+                record_dict = item
+                
+            raw_json = json.dumps(item, indent=2, ensure_ascii=False) if store_raw_content else ""
+            yield record_dict, raw_json
+    except Exception as exc:
+        if strict_mode:
+            raise
+        if reject_log_path:
+            os.makedirs(os.path.dirname(os.path.abspath(reject_log_path)), exist_ok=True)
+            with open(reject_log_path, "a", encoding="utf-8") as rf:
+                rf.write(f"Parser level JSON syntax error: {exc}\n")
+        logger.warning(f"JSON parse error encountered: {exc}")

@@ -3,7 +3,6 @@ import json
 import logging
 import time
 from pathlib import Path
-from urllib.parse import urlparse
 
 from config import MergerConfig
 from core.deduplicator import SQLiteDeduplicator
@@ -17,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class FeedMerger:
-    """Coordinate downloads, parsing, deduplication, writing, and validation."""
+    """Coordinate pipelined downloads, parsing, deduplication, writing, and validation."""
 
     def __init__(self, config: MergerConfig) -> None:
         self.config = config
@@ -27,14 +26,14 @@ class FeedMerger:
         self.statistics = MergeStatistics()
 
     async def run(self, feeds_file: Path) -> None:
-        """Merge all feed sources listed in the feeds configuration file."""
+        """Merge all feed sources using a high-throughput producer-consumer streaming pipeline."""
         self._prepare_directories()
         if self.config.reset_duplicate_db:
             self.config.duplicate_db.unlink(missing_ok=True)
-            
+
         sources = self._read_sources(feeds_file)
         self.statistics.total_feeds = len(sources)
-        
+
         for src in sources:
             key = self._feed_key(src)
             self.statistics.feeds[key] = {
@@ -43,87 +42,97 @@ class FeedMerger:
                 "jobs_parsed": 0,
                 "jobs_written": 0,
                 "elapsed_seconds": 0.0,
+                "error": None,
             }
-            
-        logger.info("Starting merge for %s feed source(s)", len(sources))
 
-        # Identify which sources are remote (URLs, Secure APIs, SFTPs)
-        remote_sources = [src for src in sources if src.get("type") in ("url", "secure_api", "sftp")]
-        download_map: dict[str, Path] = {}
+        logger.info("Starting merge pipeline for %s feed source(s) with concurrency=%s", len(sources), self.config.max_concurrent_downloads)
+
+        # Producer-Consumer queue for streaming downloaded feeds directly into parser/writer
+        ready_queue: asyncio.Queue[tuple[dict, Path | Exception]] = asyncio.Queue()
         semaphore = asyncio.Semaphore(self.config.max_concurrent_downloads)
 
-        async def _download_with_sem(src: dict) -> tuple[str, Path | Exception]:
+        async def _download_worker(src: dict, session) -> None:
             key = self._feed_key(src)
-            self.statistics.feeds[key]["status"] = "downloading"
-            async with semaphore:
-                try:
-                    temp_path = await self.downloader.download(src)
-                    return key, temp_path
-                except Exception as exc:
-                    return key, exc
-
-        if remote_sources:
-            logger.info(
-                "Downloading %s feed(s) concurrently (max_concurrency=%s)...",
-                len(remote_sources),
-                self.config.max_concurrent_downloads,
-            )
-            download_tasks = [_download_with_sem(src) for src in remote_sources]
-            results = await asyncio.gather(*download_tasks)
-            for key, result in results:
-                if isinstance(result, Exception):
-                    self.statistics.failed_feeds += 1
-                    self.statistics.feeds[key]["status"] = "failed"
-                    logger.error("Failed to download feed %s: %s", key, result)
-                else:
-                    download_map[key] = result
+            src_type = src.get("type", "url")
+            if src_type in ("url", "secure_api", "sftp"):
+                self.statistics.feeds[key]["status"] = "downloading"
+                async with semaphore:
                     try:
-                        self.statistics.feeds[key]["file_size_bytes"] = result.stat().st_size
+                        temp_path = await self.downloader.download(src, session=session)
+                        try:
+                            self.statistics.feeds[key]["file_size_bytes"] = temp_path.stat().st_size
+                        except Exception:
+                            pass
+                        await ready_queue.put((src, temp_path))
+                    except Exception as exc:
+                        await ready_queue.put((src, exc))
+            elif src_type == "file":
+                path = Path(src.get("path", ""))
+                if not path.exists():
+                    await ready_queue.put((src, FileNotFoundError(f"File not found: {path}")))
+                else:
+                    try:
+                        self.statistics.feeds[key]["file_size_bytes"] = path.stat().st_size
                     except Exception:
                         pass
+                    await ready_queue.put((src, path))
+            else:
+                await ready_queue.put((src, ValueError(f"Unknown source type: {src_type}")))
 
-        with SQLiteDeduplicator(self.config.duplicate_db, self.config.duplicate_fields) as dedupe:
-            with get_stream_writer(self.config.output_file, self.config.root_output_node) as writer:
-                for src in sources:
-                    await self._process_source(src, download_map, dedupe, writer)
+        async def _producer(session) -> None:
+            tasks = [asyncio.create_task(_download_worker(src, session)) for src in sources]
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        async with self.downloader as downloader:
+            session = await downloader.get_session()
+            producer_task = asyncio.create_task(_producer(session))
+
+            with SQLiteDeduplicator(self.config.duplicate_db, self.config.duplicate_fields) as dedupe:
+                with get_stream_writer(self.config.output_file, self.config.root_output_node) as writer:
+                    for _ in range(len(sources)):
+                        src, result = await ready_queue.get()
+                        await self._process_feed_result(src, result, dedupe, writer)
+                        ready_queue.task_done()
+
+            await producer_task
 
         self.validator.validate_file(self.config.output_file)
         self.statistics.write_json(self.config.statistics_file)
-        logger.info("Merge complete: %s", self.statistics.snapshot())
+        logger.info(
+            "Merge complete: %s total unique jobs written (%s duplicates filtered)",
+            self.statistics.jobs_written,
+            self.statistics.duplicates_removed,
+        )
 
-    async def _process_source(
+    async def _process_feed_result(
         self,
         source_cfg: dict,
-        download_map: dict[str, Path],
+        result: Path | Exception,
         dedupe: SQLiteDeduplicator,
         writer: object,
     ) -> None:
-        temp_path: Path | None = None
         started_at = time.perf_counter()
         key = self._feed_key(source_cfg)
+        src_type = source_cfg.get("type", "url")
+        temp_path: Path | None = None
+
+        if isinstance(result, Exception):
+            self.statistics.failed_feeds += 1
+            self.statistics.feeds[key]["status"] = "failed"
+            self.statistics.feeds[key]["error"] = str(result)
+            self.statistics.feeds[key]["elapsed_seconds"] = time.perf_counter() - started_at
+            logger.error("Feed failed (%s): %s", key, result)
+            return
+
+        path = result
+        if src_type in ("url", "secure_api", "sftp"):
+            temp_path = path
+
         self.statistics.feeds[key]["status"] = "processing"
+        feed_jobs_parsed = 0
+        feed_jobs_written = 0
+
         try:
-            src_type = source_cfg.get("type")
-            if src_type in ("url", "secure_api", "sftp"):
-                if key not in download_map:
-                    self.statistics.feeds[key]["status"] = "failed"
-                    return
-                path = download_map[key]
-                temp_path = path
-            elif src_type == "file":
-                path = Path(source_cfg.get("path", ""))
-                if not path.exists():
-                    raise FileNotFoundError(f"Feed source does not exist: {path}")
-                try:
-                    self.statistics.feeds[key]["file_size_bytes"] = path.stat().st_size
-                except Exception:
-                    pass
-            else:
-                raise ValueError(f"Unknown source type: {src_type}")
-
-            feed_jobs_parsed = 0
-            feed_jobs_written = 0
-
             for job in self.parser.iter_jobs(path):
                 self.statistics.jobs_parsed += 1
                 feed_jobs_parsed += 1
@@ -132,6 +141,12 @@ class FeedMerger:
                 if dedupe.seen(job):
                     self.statistics.duplicates_removed += 1
                     continue
+
+                if self.config.tag_source_feed:
+                    from lxml import etree as _etree
+                    src_tag = _etree.SubElement(job, self.config.source_tag_name)
+                    src_tag.text = key
+
                 writer.write_element(job)
                 self.statistics.jobs_written += 1
                 feed_jobs_written += 1
@@ -140,23 +155,24 @@ class FeedMerger:
             self.statistics.successful_feeds += 1
             self.statistics.feeds[key]["status"] = "completed"
             logger.info(
-                "Processed %s: parsed=%s written=%s elapsed=%.2fs",
-                key,
+                "Processed %s: parsed=%s, written=%s in %.2fs",
+                Path(key).name if "/" in key or "\\" in key else key,
                 feed_jobs_parsed,
                 feed_jobs_written,
                 time.perf_counter() - started_at,
             )
-        except Exception:
+        except Exception as exc:
             self.statistics.failed_feeds += 1
             self.statistics.feeds[key]["status"] = "failed"
-            logger.exception("Failed to process feed source: %s", key)
+            self.statistics.feeds[key]["error"] = str(exc)
+            logger.exception("Failed to parse feed source %s: %s", key, exc)
         finally:
             self.statistics.feeds[key]["elapsed_seconds"] = time.perf_counter() - started_at
             if temp_path and self.config.delete_temp_files:
                 try:
                     temp_path.unlink(missing_ok=True)
-                except Exception as clean_err:
-                    logger.warning("Failed to clean up temp file %s: %s", temp_path, clean_err)
+                except Exception:
+                    pass
 
     def _read_sources(self, feeds_file: Path) -> list[dict]:
         json_file = feeds_file.with_suffix(".json")
@@ -180,7 +196,7 @@ class FeedMerger:
                         sources.append({"type": "url", "url": line})
                     else:
                         sources.append({"type": "file", "path": line})
-                        
+
                 with json_file.open("w", encoding="utf-8") as f:
                     json.dump(sources, f, indent=2)
                 logger.info("Migrated feeds.txt to feeds.json successfully.")

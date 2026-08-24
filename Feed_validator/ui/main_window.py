@@ -258,8 +258,8 @@ class MainWindow(QMainWindow):
             "column": error.column,
             "byte_offset": error.byte_offset,
             "message": error.message,
-            "category_name": error.category.value,
-            "severity_name": error.severity.value,
+            "category_name": error.category.value if hasattr(error.category, "value") else str(error.category),
+            "severity_name": error.severity.value if hasattr(error.severity, "value") else str(error.severity),
             "context_lines": [{"line_number": cl.line_number, "text": cl.text, "is_error_line": cl.is_error_line} for cl in error.context_lines],
             "tag_name": error.tag_name,
             "reference_tag": error.reference_tag,
@@ -288,7 +288,8 @@ class MainWindow(QMainWindow):
         self.bridge.validation_complete.emit(json.dumps({
             "duration_seconds": result.duration_seconds,
             "was_cancelled": result.was_cancelled,
-            "has_errors": result.has_errors,
+            "has_errors": bool(result.has_errors or len(result.errors) > 0),
+            "error_count": len(result.errors),
         }))
 
     # ── Report Exporter ───────────────────────────────────────────────────────

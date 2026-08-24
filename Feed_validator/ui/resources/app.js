@@ -32,6 +32,15 @@ document.addEventListener("DOMContentLoaded", () => {
         return `${m}m ${s}s`;
     }
 
+    function escapeHtml(str) {
+        if (str === null || str === undefined) return "";
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+    }
+
     // ── QWebChannel Setup ─────────────────────────────────────────────────
     if (typeof qt !== "undefined") {
         new QWebChannel(qt.webChannelTransport, (channel) => {
@@ -146,17 +155,21 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("meta-duration").textContent = formatDuration(result.duration_seconds);
 
         const statusLabel = document.getElementById("validation-status");
+        const hasErrors = Boolean(result.has_errors || (result.error_count > 0) || (validationErrors.length > 0));
+
         if (result.was_cancelled) {
             statusLabel.textContent = "Cancelled";
             statusLabel.style.color = "var(--warning)";
-        } else if (result.has_errors) {
-            statusLabel.textContent = "Complete (Errors Found)";
+        } else if (hasErrors) {
+            statusLabel.textContent = `Complete (${validationErrors.length || result.error_count} Errors Found)`;
             statusLabel.style.color = "var(--error)";
+            document.getElementById("stat-errors").textContent = validationErrors.length || result.error_count;
+            document.getElementById("stat-errors").style.color = "var(--error)";
         } else {
             statusLabel.textContent = "Complete (Valid Document)";
             statusLabel.style.color = "var(--success)";
             
-            // Draw clean table empty state
+            // Draw clean table empty state ONLY when there are genuinely 0 errors
             const tbody = document.getElementById("errors-tbody");
             tbody.innerHTML = `
                 <tr>
@@ -168,7 +181,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         setProgress(100);
-        document.getElementById("btn-export").disabled = false;
+        document.getElementById("btn-export").disabled = !hasErrors;
     }
 
     function onValidationFailed(msg) {

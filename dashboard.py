@@ -613,6 +613,7 @@ class QuickActionCard(QFrame):
         "Feed Builder":   {"color": "#4ade80", "color_rgb": "74, 222, 128",  "light": "#bbf7d0", "icon": "🛠️", "tags": ["Composer", "Builder"]},
         "Feed Converter": {"color": "#a78bfa", "color_rgb": "167, 139, 250", "light": "#ddd6fe", "icon": "🔄", "tags": ["Convert", "Formats"]},
         "Feed Diff":      {"color": "#f472b6", "color_rgb": "244, 114, 182", "light": "#fbcfe8", "icon": "⚖️", "tags": ["Diff Check", "Mappers"]},
+        "Feed Downloader": {"color": "#06b6d4", "color_rgb": "6, 182, 212",   "light": "#a5f3fc", "icon": "⬇️", "tags": ["8 Streams", "High-Speed"]},
     }
 
     def __init__(self, title, description, tab_index, main_window, parent=None):
@@ -1802,6 +1803,214 @@ class FeedDiffTab(QWidget):
 
 
 # ── Command Palette overlay dialog ───────────────────────────────────────────
+# ── Feed Downloader Tab ────────────────────────────────────────────────────────
+class FeedDownloaderTab(QWidget):
+    """High-speed multi-threaded parallel feed downloader tab."""
+    def __init__(self, main_window, parent=None):
+        super().__init__(parent)
+        self.main_window = main_window
+        self.setObjectName("downloader_tab")
+        self._dl_thread = None
+        self._is_downloading = False
+        self._cancelled = False
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(32, 32, 32, 32)
+        lay.setSpacing(18)
+        header = QVBoxLayout()
+        header.setSpacing(4)
+        t = QLabel("Feed Downloader ⬇️", self)
+        t.setStyleSheet("color: #06b6d4; font-size: 24px; font-weight: bold; font-family: 'Segoe UI'; background: transparent;")
+        header.addWidget(t)
+        s = QLabel("Download massive XML/JSON feeds at maximum speed using parallel HTTP range streams.", self)
+        s.setStyleSheet("color: #64748b; font-size: 15px; font-family: 'Segoe UI'; background: transparent;")
+        header.addWidget(s)
+        lay.addLayout(header)
+        url_row = QHBoxLayout()
+        url_row.setSpacing(10)
+        ul = QLabel("Feed URL:", self)
+        ul.setStyleSheet("color: #94a3b8; font-size: 13px; font-family: 'Segoe UI'; background: transparent; min-width: 70px;")
+        url_row.addWidget(ul)
+        self.url_input = QLineEdit(self)
+        self.url_input.setPlaceholderText("https://example.com/feed.xml")
+        self.url_input.setMinimumHeight(40)
+        self.url_input.setStyleSheet("QLineEdit { background-color: #121214; color: #f1f5f9; border: 1px solid #27272a; border-radius: 8px; padding-left: 12px; font-size: 13px; font-family: 'Segoe UI'; } QLineEdit:focus { border: 1px solid #06b6d4; }")
+        url_row.addWidget(self.url_input, 1)
+        lay.addLayout(url_row)
+        opts_row = QHBoxLayout()
+        opts_row.setSpacing(12)
+        ol = QLabel("Save To:", self)
+        ol.setStyleSheet("color: #94a3b8; font-size: 13px; font-family: 'Segoe UI'; background: transparent; min-width: 70px;")
+        opts_row.addWidget(ol)
+        self.out_path_input = QLineEdit(self)
+        self.out_path_input.setText(os.path.join(WORKSPACE_DIR, "Feed_analyzer", "downloads"))
+        self.out_path_input.setMinimumHeight(38)
+        self.out_path_input.setStyleSheet("QLineEdit { background-color: #121214; color: #94a3b8; border: 1px solid #27272a; border-radius: 8px; padding-left: 12px; font-size: 12px; font-family: 'Segoe UI'; }")
+        opts_row.addWidget(self.out_path_input, 1)
+        browse_btn = QPushButton("Browse", self)
+        browse_btn.setMinimumHeight(38)
+        browse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        browse_btn.setStyleSheet("QPushButton { background-color: #1e293b; color: #94a3b8; border: 1px solid #334155; border-radius: 8px; font-size: 12px; font-family: 'Segoe UI'; padding: 0 14px; } QPushButton:hover { background-color: #334155; color: #f1f5f9; }")
+        browse_btn.clicked.connect(self._browse_output_dir)
+        opts_row.addWidget(browse_btn)
+        tl = QLabel("Streams:", self)
+        tl.setStyleSheet("color: #94a3b8; font-size: 13px; font-family: 'Segoe UI'; background: transparent;")
+        opts_row.addWidget(tl)
+        self.thread_combo = QComboBox(self)
+        for tc in [4, 8, 12, 16, 24, 32]:
+            self.thread_combo.addItem(f"{tc} streams", tc)
+        self.thread_combo.setCurrentIndex(1)
+        self.thread_combo.setMinimumHeight(38)
+        self.thread_combo.setStyleSheet("QComboBox { background-color: #121214; color: #f1f5f9; border: 1px solid #27272a; border-radius: 8px; padding-left: 10px; font-size: 12px; font-family: 'Segoe UI'; } QComboBox::drop-down { border: none; } QComboBox QAbstractItemView { background-color: #1c1c1f; color: #f1f5f9; border: 1px solid #334155; }")
+        opts_row.addWidget(self.thread_combo)
+        lay.addLayout(opts_row)
+        from PySide6.QtWidgets import QProgressBar
+        self.progress_bar = QProgressBar(self)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setFixedHeight(8)
+        self.progress_bar.setStyleSheet("QProgressBar { background-color: #1e293b; border: none; border-radius: 4px; } QProgressBar::chunk { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #06b6d4, stop:1 #0891b2); border-radius: 4px; }")
+        lay.addWidget(self.progress_bar)
+        stats_row = QHBoxLayout()
+        self.pct_lbl = QLabel("0%", self)
+        self.pct_lbl.setStyleSheet("color: #06b6d4; font-size: 13px; font-weight: bold; font-family: 'Segoe UI'; background: transparent;")
+        stats_row.addWidget(self.pct_lbl)
+        stats_row.addStretch()
+        self.speed_lbl = QLabel("Speed: --", self)
+        self.speed_lbl.setStyleSheet("color: #94a3b8; font-size: 12px; font-family: 'Segoe UI'; background: transparent;")
+        stats_row.addWidget(self.speed_lbl)
+        stats_row.addSpacing(24)
+        self.eta_lbl = QLabel("ETA: --", self)
+        self.eta_lbl.setStyleSheet("color: #94a3b8; font-size: 12px; font-family: 'Segoe UI'; background: transparent;")
+        stats_row.addWidget(self.eta_lbl)
+        stats_row.addSpacing(24)
+        self.size_lbl = QLabel("Size: --", self)
+        self.size_lbl.setStyleSheet("color: #94a3b8; font-size: 12px; font-family: 'Segoe UI'; background: transparent;")
+        stats_row.addWidget(self.size_lbl)
+        lay.addLayout(stats_row)
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
+        self.download_btn = QPushButton("Download Feed", self)
+        self.download_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.download_btn.setMinimumHeight(44)
+        self.download_btn.setStyleSheet("QPushButton { background-color: #06b6d4; color: #000000; border: none; border-radius: 8px; font-weight: bold; font-size: 15px; font-family: 'Segoe UI'; } QPushButton:hover { background-color: #0891b2; color: #ffffff; } QPushButton:disabled { background-color: #1e293b; color: #475569; }")
+        self.download_btn.clicked.connect(self._start_download)
+        btn_row.addWidget(self.download_btn, 2)
+        self.cancel_btn = QPushButton("Stop", self)
+        self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cancel_btn.setMinimumHeight(44)
+        self.cancel_btn.setEnabled(False)
+        self.cancel_btn.setStyleSheet("QPushButton { background-color: #27272a; color: #cbd5e1; border: 1px solid #3f3f46; border-radius: 8px; font-size: 14px; font-family: 'Segoe UI'; } QPushButton:hover { background-color: #3f3f46; color: #ef4444; } QPushButton:disabled { color: #475569; }")
+        self.cancel_btn.clicked.connect(self._cancel_download)
+        btn_row.addWidget(self.cancel_btn, 1)
+        reset_btn = QPushButton("Reset Tab", self)
+        reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        reset_btn.setMinimumHeight(44)
+        reset_btn.setStyleSheet("QPushButton { background-color: #27272a; color: #cbd5e1; border: 1px solid #3f3f46; border-radius: 8px; font-size: 14px; font-family: 'Segoe UI'; } QPushButton:hover { background-color: #3f3f46; color: #ffffff; }")
+        reset_btn.clicked.connect(self.reset_tab)
+        btn_row.addWidget(reset_btn, 1)
+        lay.addLayout(btn_row)
+        self.log_viewer = QTextBrowser(self)
+        self.log_viewer.setMinimumHeight(220)
+        self.log_viewer.setStyleSheet("QTextBrowser { background-color: #09090b; color: #f1f5f9; border: 1px solid #27272a; border-radius: 8px; font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; padding: 12px; }")
+        self.log_viewer.setHtml("<span style='color:#475569;'>Waiting for download...</span>")
+        lay.addWidget(self.log_viewer)
+
+    def _format_bytes(self, n):
+        import math
+        if n <= 0: return "0 B"
+        units = ["B", "KB", "MB", "GB"]
+        i = int(math.floor(math.log(max(n, 1), 1024)))
+        return f"{round(n / math.pow(1024, i), 2)} {units[i]}"
+
+    def _browse_output_dir(self):
+        chosen = QFileDialog.getExistingDirectory(self, "Select Output Directory", self.out_path_input.text())
+        if chosen:
+            self.out_path_input.setText(chosen)
+
+    def _start_download(self):
+        url = self.url_input.text().strip()
+        if not url:
+            self.log_viewer.setHtml("<span style='color:#ef4444;'>[Error] Please enter a feed URL.</span>")
+            return
+        if self._is_downloading:
+            return
+        out_dir = self.out_path_input.text().strip() or os.path.join(WORKSPACE_DIR, "Feed_analyzer", "downloads")
+        os.makedirs(out_dir, exist_ok=True)
+        filename = url.split('/')[-1].split('?')[0] or "feed.xml"
+        if '.' not in filename:
+            filename += ".xml"
+        out_path = os.path.join(out_dir, filename.replace(' ', '_'))
+        num_threads = self.thread_combo.currentData()
+        self._is_downloading = True
+        self._cancelled = False
+        self.download_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(True)
+        self.progress_bar.setValue(0)
+        self.pct_lbl.setText("0%")
+        self.speed_lbl.setText("Speed: --")
+        self.eta_lbl.setText("ETA: --")
+        self.size_lbl.setText("Size: --")
+        self.log_viewer.clear()
+        self.log_viewer.append(f"<span style='color:#06b6d4;'>[*] Starting download: {url}</span>")
+        self.log_viewer.append(f"[*] Output: {out_path}")
+        self.log_viewer.append(f"[*] Parallel streams: {num_threads}")
+        QApplication.processEvents()
+        def progress_cb(downloaded, total, speed_mb, eta_s):
+            pct = int(downloaded / total * 100) if total > 0 else 0
+            self.progress_bar.setValue(pct)
+            self.pct_lbl.setText(f"{pct}%")
+            self.speed_lbl.setText(f"Speed: {speed_mb:.1f} MB/s")
+            self.eta_lbl.setText(f"ETA: {int(eta_s)}s" if eta_s and eta_s < 9999 else "ETA: --")
+            self.size_lbl.setText(f"{self._format_bytes(downloaded)} / {self._format_bytes(total)}")
+            QApplication.processEvents()
+        def run():
+            try:
+                dl_path = os.path.join(WORKSPACE_DIR, "Feed_analyzer")
+                if dl_path not in sys.path:
+                    sys.path.insert(0, dl_path)
+                from fast_downloader import download_file_fast
+                final_path = download_file_fast(url=url, output_path=out_path, num_threads=num_threads, progress_callback=progress_cb)
+                if not self._cancelled:
+                    self.progress_bar.setValue(100)
+                    self.pct_lbl.setText("100%")
+                    self.log_viewer.append(f"<span style='color:#10b981;'>[OK] Download complete! Saved to: {final_path}</span>")
+                    self.eta_lbl.setText("ETA: Done")
+            except Exception as e:
+                if not self._cancelled:
+                    self.log_viewer.append(f"<span style='color:#ef4444;'>[Error] {e}</span>")
+            finally:
+                self._is_downloading = False
+                self.download_btn.setEnabled(True)
+                self.cancel_btn.setEnabled(False)
+                QApplication.processEvents()
+        import threading as _threading
+        self._dl_thread = _threading.Thread(target=run, daemon=True)
+        self._dl_thread.start()
+
+    def _cancel_download(self):
+        self._cancelled = True
+        self._is_downloading = False
+        self.download_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
+        self.log_viewer.append("<span style='color:#f59e0b;'>[!] Download cancelled by user.</span>")
+
+    def reset_tab(self):
+        self._cancelled = True
+        self._is_downloading = False
+        self.url_input.clear()
+        self.progress_bar.setValue(0)
+        self.pct_lbl.setText("0%")
+        self.speed_lbl.setText("Speed: --")
+        self.eta_lbl.setText("ETA: --")
+        self.size_lbl.setText("Size: --")
+        self.download_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
+        self.log_viewer.setHtml("<span style='color:#475569;'>Tab cleared. Waiting for download...</span>")
+
+
+
+
 class CommandPaletteDialog(QDialog):
     """Raycast spotlight-style keyboard command palette overlay."""
     def __init__(self, main_window, parent=None):
@@ -1886,6 +2095,7 @@ class CommandPaletteDialog(QDialog):
             ("🛠️  Open Feed Builder", "nav:4"),
             ("🔄  Open Feed Converter", "nav:5"),
             ("⚖️  Open Feed Diff & Comparator", "nav:6"),
+            ("⬇️  Open Feed Downloader", "nav:7"),
             ("🌙  Toggle UI Dark/Light Theme", "action:theme"),
             ("🔴  Exit Feed Workspace", "action:exit")
         ]
@@ -2424,6 +2634,15 @@ class SidebarButton(QPushButton):
             painter.drawLine(15, 5, 12, 11)
             painter.drawLine(15, 5, 18, 11)
             painter.drawLine(12, 11, 18, 11)
+        elif self.icon_type == "Downloader":
+            # Download arrow icon: vertical bar + chevron + base bar
+            painter.drawLine(10, 2, 10, 13)   # vertical stem
+            arrow = QPainterPath()
+            arrow.moveTo(5, 9)
+            arrow.lineTo(10, 15)
+            arrow.lineTo(15, 9)
+            painter.drawPath(arrow)
+            painter.drawLine(3, 18, 17, 18)   # base bar
         
         painter.restore()
 
@@ -2670,6 +2889,7 @@ class FeedWorkspace(QMainWindow):
             ("Builder",   "Builder",   4),
             ("Converter", "Converter", 5),
             ("Diff",      "Diff",      6),
+            ("Downloader",  "Downloader",  7),
         ]
 
         sl.setSpacing(0) # Disable default layout spacing to control spacing explicitly
@@ -2955,6 +3175,10 @@ class FeedWorkspace(QMainWindow):
         self.diff_widget = FeedDiffTab(self)
         self.stacked_widget.addWidget(self.diff_widget)
 
+        # Page 7: Feed Downloader
+        self.downloader_widget = FeedDownloaderTab(self)
+        self.stacked_widget.addWidget(self.downloader_widget)
+
     def handle_download_requested(self, download_item):
         """Handles file download requests from the QWebEngineView safely."""
         try:
@@ -3073,6 +3297,7 @@ class FeedWorkspace(QMainWindow):
             ("Feed Builder",   "Compose, edit, and generate feeds from scratch", 4),
             ("Feed Converter", "Convert feed schemas across JSON, XML, and CSV", 5),
             ("Feed Diff",      "Compare two feeds and map the schema differences", 6),
+            ("Feed Downloader", "Download massive feeds at maximum speed with parallel HTTP streams", 7),
         ]
 
         for i, (title, desc, idx) in enumerate(actions):
@@ -3323,7 +3548,8 @@ class FeedWorkspace(QMainWindow):
             2: "Feed Merger",
             3: "Feed Validator",
             4: "Feed Builder",
-            5: "Feed Utilities"
+            5: "Feed Utilities",
+            7: "Feed Downloader"
         }
         name = tool_names.get(idx, "Tool")
 
@@ -3363,6 +3589,11 @@ class FeedWorkspace(QMainWindow):
             if hasattr(self, "diff_widget"):
                 self.diff_widget.reset_tab()
                 name = "Feed Diff"
+                reset_ok = True
+        elif idx == 7:
+            if hasattr(self, "downloader_widget"):
+                self.downloader_widget.reset_tab()
+                name = "Feed Downloader"
                 reset_ok = True
 
         if reset_ok:

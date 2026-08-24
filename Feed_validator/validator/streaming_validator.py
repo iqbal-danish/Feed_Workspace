@@ -43,23 +43,37 @@ class StreamingValidator:
         self._context_count = context_line_count
 
     def _detect_file_type(self, file_path: Path) -> str:
-        """Auto-detect if a file is XML or JSON."""
+        """Auto-detect if a file is XML or JSON based on content first, with suffix fallback."""
+        try:
+            with open(file_path, "rb") as f:
+                peek = f.read(4096).strip()
+                if peek.startswith(b"\xef\xbb\xbf"):  # UTF-8 BOM
+                    peek = peek[3:].strip()
+                elif peek.startswith(b"\xff\xfe") or peek.startswith(b"\xfe\xff"):  # UTF-16 BOM
+                    try:
+                        decoded = peek.decode("utf-16", errors="ignore").strip()
+                        if decoded.startswith("<"):
+                            return "xml"
+                        if decoded.startswith(("{", "[")):
+                            return "json"
+                    except Exception:
+                        pass
+
+                # Content check: XML begins with '<', JSON begins with '{' or '['
+                if peek.startswith(b"<"):
+                    return "xml"
+                if peek.startswith((b"{", b"[")):
+                    return "json"
+        except Exception:
+            pass
+
+        # Fallback to extension if content peek is ambiguous
         suffix = file_path.suffix.lower()
         if suffix == ".json":
             return "json"
         if suffix in (".xml", ".xsd", ".xsl", ".xslt", ".svg", ".xhtml"):
             return "xml"
 
-        # Content peek check
-        try:
-            with open(file_path, "rb") as f:
-                peek = f.read(4096).strip()
-                if peek.startswith(b"\xef\xbb\xbf"):
-                    peek = peek[3:].strip()
-                if peek.startswith((b"{", b"[")):
-                    return "json"
-        except Exception:
-            pass
         return "xml"
 
     def _download_url(
@@ -69,64 +83,92 @@ class StreamingValidator:
         progress_callback: Callable[[ValidationProgress], None] | None,
         cancel_event: threading.Event | None,
     ) -> bool:
-        """Download URL streamingly and write to temp_file.
+        """Download URL streamingly and write to temp_file with transparent gzip decompression."""
+        import ssl
+        import gzip
+        import zlib
 
-        Returns True on success, False if cancelled or failed.
-        """
         logger.info("Downloading URL: %s", url_str)
         start_time = time.perf_counter()
 
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/xml,application/xml,application/json,*/*;q=0.9",
+            "Accept-Encoding": "gzip, deflate, identity",
+        }
+
         try:
-            req = urllib.request.Request(
-                url_str, headers={"User-Agent": "XML-Validator-Pro/1.0"}
-            )
-            with urllib.request.urlopen(req) as response:
+            req = urllib.request.Request(url_str, headers=headers)
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=60) as response:
                 content_length = response.getheader("Content-Length")
                 total_size = int(content_length) if content_length else 0
+                encoding_hdr = (response.getheader("Content-Encoding") or "").lower()
 
                 bytes_downloaded = 0
-                with open(temp_file, "wb") as out_f:
-                    while True:
-                        if cancel_event is not None and cancel_event.is_set():
-                            logger.info("Download cancelled by user")
-                            return False
+                raw_chunks: list[bytes] = []
 
-                        chunk = response.read(65536)
-                        if not chunk:
-                            break
+                while True:
+                    if cancel_event is not None and cancel_event.is_set():
+                        logger.info("Download cancelled by user")
+                        return False
 
-                        out_f.write(chunk)
-                        bytes_downloaded += len(chunk)
+                    chunk = response.read(65536)
+                    if not chunk:
+                        break
 
-                        # Emit download progress callback (errors_found = -1 as sentinel)
-                        if progress_callback is not None:
-                            elapsed = time.perf_counter() - start_time
-                            speed = bytes_downloaded / elapsed if elapsed > 0 else 0.0
-                            progress_callback(
-                                ValidationProgress(
-                                    bytes_processed=bytes_downloaded,
-                                    total_bytes=total_size or bytes_downloaded,
-                                    percent_complete=(
-                                        (bytes_downloaded / total_size * 100.0)
-                                        if total_size
-                                        else 0.0
-                                    ),
-                                    elapsed_seconds=elapsed,
-                                    estimated_remaining_seconds=(
-                                        max(
-                                            0.0,
-                                            (total_size - bytes_downloaded)
-                                            / speed,
-                                        )
-                                        if speed > 0 and total_size
-                                        else 0.0
-                                    ),
-                                    processing_speed_mbps=speed
-                                    / (1024.0 * 1024.0),
-                                    errors_found=-1,  # Downloading sentinel
-                                )
+                    raw_chunks.append(chunk)
+                    bytes_downloaded += len(chunk)
+
+                    if progress_callback is not None:
+                        elapsed = time.perf_counter() - start_time
+                        speed = bytes_downloaded / elapsed if elapsed > 0 else 0.0
+                        progress_callback(
+                            ValidationProgress(
+                                bytes_processed=bytes_downloaded,
+                                total_bytes=total_size or bytes_downloaded,
+                                percent_complete=(
+                                    (bytes_downloaded / total_size * 100.0)
+                                    if total_size
+                                    else 0.0
+                                ),
+                                elapsed_seconds=elapsed,
+                                estimated_remaining_seconds=(
+                                    max(
+                                        0.0,
+                                        (total_size - bytes_downloaded) / speed,
+                                    )
+                                    if speed > 0 and total_size
+                                    else 0.0
+                                ),
+                                processing_speed_mbps=speed / (1024.0 * 1024.0),
+                                errors_found=-1,  # Downloading sentinel
                             )
-            logger.info("Download complete: %d bytes written", bytes_downloaded)
+                        )
+
+            # Assemble and handle decompression if necessary
+            full_data = b"".join(raw_chunks)
+            if full_data.startswith(b"\x1f\x8b") or "gzip" in encoding_hdr:
+                try:
+                    full_data = gzip.decompress(full_data)
+                except Exception as gz_err:
+                    logger.warning("Gzip decompress fallback: %s", gz_err)
+            elif "deflate" in encoding_hdr:
+                try:
+                    full_data = zlib.decompress(full_data)
+                except Exception as def_err:
+                    logger.warning("Deflate decompress fallback: %s", def_err)
+
+            with open(temp_file, "wb") as out_f:
+                out_f.write(full_data)
+
+            logger.info("Download complete: %d bytes written to %s", len(full_data), temp_file.name)
             return True
         except Exception as e:
             logger.error("Download failed: %s", e)

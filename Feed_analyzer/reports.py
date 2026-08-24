@@ -1,6 +1,6 @@
 import sqlite3
 from typing import Dict, Any, List
-from analyzer import get_db_connection
+from analyzer import get_analytics_connection
 from statistics import get_field_stats
 
 def generate_missing_value_report(
@@ -28,7 +28,7 @@ def generate_duplicate_summary(
     field_mappings: Dict[str, str]
 ) -> List[Dict[str, Any]]:
     """Discovers which fields contain duplicate values and returns a summary list."""
-    conn = get_db_connection(db_path)
+    conn = get_analytics_connection(db_path)
     summary = []
     
     try:

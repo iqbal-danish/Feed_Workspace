@@ -1,4 +1,4 @@
-"""SQLite-backed duplicate detection for streamed XML jobs."""
+"""High-performance SQLite and in-memory duplicate detection for streamed XML jobs."""
 
 from __future__ import annotations
 
@@ -10,18 +10,22 @@ from lxml import etree
 
 
 class SQLiteDeduplicator:
-    """Store only compact SHA256 fingerprints for duplicate detection."""
+    """Hybrid in-memory and SQLite duplicate detector for blazing fast O(1) checks."""
 
     def __init__(self, database_path: Path, duplicate_fields: tuple[str, ...]) -> None:
         self.database_path = database_path
         self.duplicate_fields = duplicate_fields
         self.connection: sqlite3.Connection | None = None
+        self._memory_set: set[int] = set()
+        self._pending_inserts: list[tuple[str, str]] = []
+        self._batch_size = 5000
 
     def __enter__(self) -> "SQLiteDeduplicator":
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self.connection = sqlite3.connect(self.database_path)
         self.connection.execute("PRAGMA journal_mode=WAL")
-        self.connection.execute("PRAGMA synchronous=NORMAL")
+        self.connection.execute("PRAGMA synchronous=OFF")
+        self.connection.execute("PRAGMA cache_size=-64000")  # 64MB cache
         self.connection.execute(
             """
             CREATE TABLE IF NOT EXISTS job_identifiers (
@@ -31,16 +35,32 @@ class SQLiteDeduplicator:
             )
             """
         )
+        # Pre-load existing hashes into memory set if restarting on existing DB
+        cursor = self.connection.execute("SELECT field_name, field_value FROM job_identifiers")
+        for row in cursor:
+            self._memory_set.add(hash((row[0], row[1])))
         return self
 
     def __exit__(self, *_: object) -> None:
+        self.flush()
         if self.connection is not None:
             self.connection.commit()
             self.connection.close()
+            self.connection = None
+        self._memory_set.clear()
+
+    def flush(self) -> None:
+        """Flush pending batch inserts to SQLite."""
+        if self.connection is not None and self._pending_inserts:
+            self.connection.executemany(
+                "INSERT OR IGNORE INTO job_identifiers (field_name, field_value) VALUES (?, ?)",
+                self._pending_inserts,
+            )
+            self.connection.commit()
+            self._pending_inserts.clear()
 
     def seen(self, element: etree._Element) -> bool:
-        """Return True when a job identifier already exists in the database."""
-        assert self.connection is not None
+        """Return True when a job identifier already exists."""
         identifiers: list[tuple[str, str]] = []
         for field in self.duplicate_fields:
             value = self._find_text(element, field)
@@ -51,28 +71,31 @@ class SQLiteDeduplicator:
             xml_hash = self._canonical_xml_hash(element)
             identifiers.append(("xml_hash", xml_hash))
 
-        # Check if any of these identifiers have been seen before
-        placeholders = " OR ".join("(field_name = ? AND field_value = ?)" for _ in identifiers)
-        query = f"SELECT 1 FROM job_identifiers WHERE {placeholders}"
-        params: list[str] = []
+        # Check in-memory hash set (instant O(1))
+        is_duplicate = False
         for f, v in identifiers:
-            params.extend([f, v])
+            h = hash((f, v))
+            if h in self._memory_set:
+                is_duplicate = True
+                break
 
-        cursor = self.connection.execute(query, params)
-        if cursor.fetchone():
+        if is_duplicate:
             return True
 
-        # If not seen, record all identifiers for this job
+        # Not duplicate: register all identifiers in memory set and stage for DB insert
         for f, v in identifiers:
-            self.connection.execute(
-                "INSERT OR IGNORE INTO job_identifiers (field_name, field_value) VALUES (?, ?)",
-                (f, v),
-            )
+            h = hash((f, v))
+            self._memory_set.add(h)
+            self._pending_inserts.append((f, v))
+
+        if len(self._pending_inserts) >= self._batch_size:
+            self.flush()
+
         return False
 
     def _find_text(self, element: etree._Element, field_name: str) -> str | None:
         normalized = field_name.replace("_", "").replace("-", "").lower()
-        # Only look at direct children of the job element to avoid matching nested structures (like company ID)
+        # Look at direct children first
         for candidate in element.iterchildren():
             local_name = etree.QName(candidate).localname
             candidate_name = local_name.replace("_", "").replace("-", "").lower()

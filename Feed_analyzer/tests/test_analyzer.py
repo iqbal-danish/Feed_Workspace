@@ -87,6 +87,45 @@ class TestFeedAnalyzer(unittest.TestCase):
         detected = detect_xml_job_element(self.temp_xml.name)
         self.assertEqual(detected, "job")
 
+    def test_complex_greenhouse_xml_detection(self):
+        """Verifies nested Greenhouse XML detects job rather than inner data_compliance."""
+        complex_xml = '''<?xml version="1.0" encoding="UTF-8"?>
+        <root-node>
+          <jobs type="array">
+            <job>
+              <absolute_url>https://boards.greenhouse.io/spacex/jobs/1</absolute_url>
+              <data_compliance type="array">
+                <data_compliance>
+                  <type>gdpr</type>
+                  <requires_consent>false</requires_consent>
+                </data_compliance>
+              </data_compliance>
+              <title>Accountant</title>
+              <company_name>SpaceX</company_name>
+            </job>
+            <job>
+              <absolute_url>https://boards.greenhouse.io/spacex/jobs/2</absolute_url>
+              <data_compliance type="array">
+                <data_compliance>
+                  <type>gdpr</type>
+                  <requires_consent>false</requires_consent>
+                </data_compliance>
+              </data_compliance>
+              <title>Engineer</title>
+              <company_name>SpaceX</company_name>
+            </job>
+          </jobs>
+        </root-node>'''
+        temp = tempfile.NamedTemporaryFile(delete=False, suffix=".xml", mode="w", encoding="utf-8")
+        temp.write(complex_xml)
+        temp.close()
+        try:
+            detected = detect_xml_job_element(temp.name)
+            self.assertEqual(detected, "job")
+        finally:
+            if os.path.exists(temp.name):
+                os.remove(temp.name)
+
     def test_json_detection(self):
         """Verifies JSON repeating record path auto-detection."""
         detected = detect_json_record_path(self.temp_json.name)
@@ -157,7 +196,7 @@ class TestFeedAnalyzer(unittest.TestCase):
         ]
         
         where_sql, params = compile_filters(filters, mappings)
-        self.assertIn("col_0 LIKE ?", where_sql)
+        self.assertIn("col_0 ILIKE ?", where_sql)
         self.assertIn("CAST(col_2 AS REAL) > ?", where_sql)
         self.assertIn("col_1 IS NOT NULL AND col_1 != ''", where_sql)
         
@@ -178,8 +217,8 @@ class TestFeedAnalyzer(unittest.TestCase):
         
         # 2. Search all fields
         where_sql, params = compile_search("Python", "Contains", "all", mappings)
-        self.assertIn("col_0 LIKE ?", where_sql)
-        self.assertIn("col_1 LIKE ?", where_sql)
+        self.assertIn("col_0 ILIKE ?", where_sql)
+        self.assertIn("col_1 ILIKE ?", where_sql)
         self.assertIn("OR", where_sql)
         self.assertEqual(params, ["%Python%", "%Python%"])
 

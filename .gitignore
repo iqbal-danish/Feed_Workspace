@@ -68,4 +68,13 @@ Feed_analyzer/uploads/*
 !Feed_analyzer/uploads/.gitkeep
 Feed_analyzer/reports/*
 !Feed_analyzer/reports/.gitkeep
+Feed_analyzer/downloads/*
+!Feed_analyzer/downloads/.gitkeep
+
+# Databases
+*.duckdb
+*.duckdb.wal
+*.db
+*.sqlite
+*.sqlite3
 
