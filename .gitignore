@@ -78,3 +78,8 @@ Feed_analyzer/downloads/*
 *.sqlite
 *.sqlite3
 
+# Rust target builds
+target/
+**/target/
+*.whl
+
