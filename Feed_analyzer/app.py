@@ -280,12 +280,6 @@ def run_parsing_task(
         }
         db.save_metadata(metadata)
 
-        # Pre-cache top field statistics in background for instant dashboard clicks
-        try:
-            precache_field_stats(db_path, db.field_mappings)
-        except Exception as e_cache:
-            logger.warning(f"Field stats pre-caching warning: {e_cache}")
-
         with tasks_lock:
             parsing_tasks[task_id].update({
                 "status": "completed",
@@ -293,6 +287,15 @@ def run_parsing_task(
                 "records_count": estimator.processed_records,
                 "speed": round(estimator.speed_records_per_sec, 1)
             })
+
+        # Pre-cache top field statistics asynchronously in background thread
+        def _bg_precache():
+            try:
+                precache_field_stats(db_path, db.field_mappings)
+            except Exception as e_cache:
+                logger.warning(f"Field stats pre-caching warning: {e_cache}")
+
+        threading.Thread(target=_bg_precache, daemon=True).start()
             
         logger.info(f"Task {task_id} completed successfully. Parsed {estimator.processed_records} records.")
         
@@ -337,15 +340,20 @@ def analyze():
     filename = ""
 
     if source_type == 'file':
-        if 'xml_file' not in request.files:
-            return jsonify({"error": "No file uploaded"}), 400
-        file = request.files['xml_file']
-        if file.filename == '':
-            return jsonify({"error": "No file selected"}), 400
-            
-        filename = secure_filename(file.filename)
-        source_path = os.path.join(config.UPLOAD_FOLDER, f"{task_id}_{filename}")
-        file.save(source_path)
+        local_file_path = request.form.get('local_file_path', '').strip()
+        if local_file_path and os.path.isfile(local_file_path):
+            source_path = local_file_path
+            filename = os.path.basename(local_file_path)
+        else:
+            if 'xml_file' not in request.files:
+                return jsonify({"error": "No file uploaded"}), 400
+            file = request.files['xml_file']
+            if file.filename == '':
+                return jsonify({"error": "No file selected"}), 400
+                
+            filename = secure_filename(file.filename)
+            source_path = os.path.join(config.UPLOAD_FOLDER, f"{task_id}_{filename}")
+            file.save(source_path)
         
     elif source_type == 'url':
         url = request.form.get('xml_url', '').strip()

@@ -301,7 +301,38 @@ def stream_xml_records(
     strict_mode: bool = False,
     store_raw_content: bool = True
 ) -> Generator[Tuple[Dict[str, Any], str], None, None]:
-    """Streams job element records from an XML file-like object."""
+    """Streams job element records from an XML file-like object using native Rust when available."""
+    if HAS_RUST_CORE and hasattr(file_obj, 'name') and isinstance(file_obj.name, str) and os.path.isfile(file_obj.name) and not strict_mode:
+        try:
+            file_path = file_obj.name
+            total_size = os.path.getsize(file_path)
+            streamer = feed_core_rs.XmlRecordStreamer(file_path, job_element_tag, store_raw_content)
+            record_idx = 0
+            for json_str, raw_xml in streamer:
+                record_idx += 1
+                if progress_callback and (record_idx % 500 == 0):
+                    progress_callback(min(total_size, record_idx * 1024))
+                record_dict = json.loads(json_str)
+                yield record_dict, raw_xml
+            if record_idx == 0 and total_size == 0 and reject_log_path:
+                os.makedirs(os.path.dirname(os.path.abspath(reject_log_path)), exist_ok=True)
+                with open(reject_log_path, "a", encoding="utf-8") as rf:
+                    rf.write("Parser level XML syntax error: no element found\n")
+            if progress_callback:
+                progress_callback(total_size)
+            return
+        except Exception as e_rust:
+            if reject_log_path:
+                os.makedirs(os.path.dirname(os.path.abspath(reject_log_path)), exist_ok=True)
+                with open(reject_log_path, "a", encoding="utf-8") as rf:
+                    rf.write(f"Parser level XML syntax error: {e_rust}\n")
+            logger.debug(f"Rust XmlRecordStreamer fallback to iterparse: {e_rust}")
+            if hasattr(file_obj, 'seek'):
+                try:
+                    file_obj.seek(0)
+                except Exception:
+                    pass
+
     wrapped_file = ProgressFileWrapper(file_obj, progress_callback)
     
     # Enable recovery directly inside iterparse to heal malformed tags

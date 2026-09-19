@@ -230,15 +230,45 @@ impl<R: Read> XmlRecordStream<R> {
                             raw_xml.push('>');
                         }
 
+                        let mut root_attrs = Map::new();
+                        for attr in e.attributes().flatten() {
+                            let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
+                            let val = String::from_utf8_lossy(&attr.value).to_string();
+                            root_attrs.insert(format!("@{key}"), Value::String(val));
+                        }
+
                         let res = parse_element_children(&mut self.reader, &self.target_tag_lower, store_raw, &mut raw_xml);
                         match res {
-                            Ok(map) => {
+                            Ok(mut map) => {
+                                for (k, v) in root_attrs {
+                                    map.insert(k, v);
+                                }
                                 let json_str = serde_json::to_string(&Value::Object(map))
                                     .unwrap_or_else(|_| "{}".to_string());
                                 return Some(Ok((json_str, raw_xml)));
                             }
                             Err(err) => return Some(Err(err)),
                         }
+                    }
+                }
+                Ok(Event::Empty(ref e)) => {
+                    let raw_name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    let local_name = strip_namespace(&raw_name);
+                    if local_name.eq_ignore_ascii_case(&self.target_tag_lower) {
+                        let mut map = Map::new();
+                        for attr in e.attributes().flatten() {
+                            let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
+                            let val = String::from_utf8_lossy(&attr.value).to_string();
+                            map.insert(format!("@{key}"), Value::String(val));
+                        }
+                        let raw_xml = if store_raw {
+                            format!("<{}/>", String::from_utf8_lossy(e.as_ref()))
+                        } else {
+                            String::new()
+                        };
+                        let json_str = serde_json::to_string(&Value::Object(map))
+                            .unwrap_or_else(|_| "{}".to_string());
+                        return Some(Ok((json_str, raw_xml)));
                     }
                 }
                 Ok(Event::Eof) => return None,
