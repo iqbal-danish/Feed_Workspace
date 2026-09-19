@@ -8,6 +8,12 @@ from pathlib import Path
 
 from lxml import etree
 
+try:
+    import feed_core_rs
+    HAS_RUST_DEDUP = True
+except ImportError:
+    HAS_RUST_DEDUP = False
+
 
 class SQLiteDeduplicator:
     """Hybrid in-memory and SQLite duplicate detector for blazing fast O(1) checks."""
@@ -17,6 +23,7 @@ class SQLiteDeduplicator:
         self.duplicate_fields = duplicate_fields
         self.connection: sqlite3.Connection | None = None
         self._memory_set: set[int] = set()
+        self._rust_dedup = feed_core_rs.FastDeduplicator() if HAS_RUST_DEDUP else None
         self._pending_inserts: list[tuple[str, str]] = []
         self._batch_size = 5000
 

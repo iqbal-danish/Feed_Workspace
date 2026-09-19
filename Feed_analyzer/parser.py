@@ -10,6 +10,12 @@ import ijson
 
 logger = logging.getLogger(__name__)
 
+try:
+    import feed_core_rs
+    HAS_RUST_CORE = True
+except ImportError:
+    HAS_RUST_CORE = False
+
 class ProgressFileWrapper:
     """Wraps a file-like object and reports bytes read to a callback."""
     def __init__(self, file_obj: Any, callback: Optional[Callable[[int], None]] = None):
@@ -68,6 +74,12 @@ def get_url_stream(url: str, timeout: int = 30) -> Tuple[Any, int]:
 
 def detect_xml_job_element(file_path: str, limit_bytes: int = 5*1024*1024) -> str:
     """Scans the beginning of an XML file to detect the repeating job element tag accurately."""
+    if HAS_RUST_CORE:
+        try:
+            return feed_core_rs.detect_xml_job_element_rs(file_path, limit_bytes)
+        except Exception as e:
+            logger.debug(f"Rust XML detection fallback to Python: {e}")
+
     import math
 
     tag_counts = Counter()
@@ -208,6 +220,12 @@ def detect_xml_job_element(file_path: str, limit_bytes: int = 5*1024*1024) -> st
 
 def detect_json_record_path(file_path: str, limit_bytes: int = 5*1024*1024) -> str:
     """Scans the beginning of a JSON file to detect the repeating record path."""
+    if HAS_RUST_CORE:
+        try:
+            return feed_core_rs.detect_json_record_path_rs(file_path, limit_bytes)
+        except Exception as e:
+            logger.debug(f"Rust JSON detection fallback to Python: {e}")
+
     prefixes = Counter()
     
     with open(file_path, 'rb') as f:

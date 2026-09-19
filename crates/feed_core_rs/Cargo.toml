@@ -1,0 +1,18 @@
+[package]
+name = "feed_core_rs"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "feed_core_rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.23", features = ["extension-module", "abi3-py310"] }
+quick-xml = { version = "0.37", features = ["serialize"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+flate2 = "1.0"
+memmap2 = "0.9"
+ahash = "0.8"
+rayon = "1.10"
