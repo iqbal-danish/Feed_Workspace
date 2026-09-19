@@ -278,6 +278,145 @@ impl<R: Read> XmlRecordStream<R> {
             self.buf.clear();
         }
     }
+
+    /// Read next pre-flattened record from stream
+    pub fn next_flat_record(
+        &mut self,
+        store_raw: bool,
+        skip_description: bool,
+    ) -> Option<Result<(HashMap<String, String>, String), String>> {
+        loop {
+            match self.reader.read_event_into(&mut self.buf) {
+                Ok(Event::Start(ref e)) => {
+                    let raw_name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    let local_name = strip_namespace(&raw_name);
+                    if local_name.eq_ignore_ascii_case(&self.target_tag_lower) {
+                        let mut raw_xml = String::new();
+                        if store_raw {
+                            raw_xml.push('<');
+                            raw_xml.push_str(&String::from_utf8_lossy(e.as_ref()));
+                            raw_xml.push('>');
+                        }
+
+                        let mut root_attrs = HashMap::new();
+                        for attr in e.attributes().flatten() {
+                            let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
+                            let val = String::from_utf8_lossy(&attr.value).to_string();
+                            root_attrs.insert(format!("@{key}"), val);
+                        }
+
+                        let res = parse_element_children(&mut self.reader, &self.target_tag_lower, store_raw, &mut raw_xml);
+                        match res {
+                            Ok(map) => {
+                                let mut flat = HashMap::new();
+                                for (k, v) in root_attrs {
+                                    flat.insert(k, v);
+                                }
+                                flatten_json_map(&map, &mut flat, "", skip_description);
+                                return Some(Ok((flat, raw_xml)));
+                            }
+                            Err(err) => return Some(Err(err)),
+                        }
+                    }
+                }
+                Ok(Event::Empty(ref e)) => {
+                    let raw_name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    let local_name = strip_namespace(&raw_name);
+                    if local_name.eq_ignore_ascii_case(&self.target_tag_lower) {
+                        let mut flat = HashMap::new();
+                        for attr in e.attributes().flatten() {
+                            let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
+                            let val = String::from_utf8_lossy(&attr.value).to_string();
+                            flat.insert(format!("@{key}"), val);
+                        }
+                        let raw_xml = if store_raw {
+                            format!("<{}/>", String::from_utf8_lossy(e.as_ref()))
+                        } else {
+                            String::new()
+                        };
+                        return Some(Ok((flat, raw_xml)));
+                    }
+                }
+                Ok(Event::Eof) => return None,
+                Err(err) => return Some(Err(format!("XML parse error: {err}"))),
+                _ => {}
+            }
+            self.buf.clear();
+        }
+    }
+
+    /// Read next batch of pre-flattened records
+    pub fn next_flat_batch(
+        &mut self,
+        batch_size: usize,
+        store_raw: bool,
+        skip_description: bool,
+    ) -> Result<Vec<(HashMap<String, String>, String)>, String> {
+        let mut batch = Vec::with_capacity(batch_size);
+        while batch.len() < batch_size {
+            match self.next_flat_record(store_raw, skip_description) {
+                Some(Ok(rec)) => batch.push(rec),
+                Some(Err(e)) => return Err(e),
+                None => break,
+            }
+        }
+        Ok(batch)
+    }
+}
+
+/// Recursively flattens a JSON Map into dot/slash separated key-value pairs
+fn flatten_json_map(
+    map: &Map<String, Value>,
+    out: &mut HashMap<String, String>,
+    prefix: &str,
+    skip_description: bool,
+) {
+    for (k, v) in map {
+        if skip_description && k.to_lowercase().contains("description") {
+            continue;
+        }
+        let full_key = if prefix.is_empty() {
+            k.clone()
+        } else {
+            format!("{prefix}/{k}")
+        };
+        match v {
+            Value::Object(nested) => {
+                flatten_json_map(nested, out, &full_key, skip_description);
+            }
+            Value::Array(arr) => {
+                if arr.iter().any(|item| item.is_object()) {
+                    let mut merged_lists: HashMap<String, Vec<Value>> = HashMap::new();
+                    for item in arr {
+                        if let Value::Object(item_obj) = item {
+                            let mut temp_flat = HashMap::new();
+                            flatten_json_map(item_obj, &mut temp_flat, "", skip_description);
+                            for (sub_k, sub_v) in temp_flat {
+                                merged_lists.entry(sub_k).or_default().push(Value::String(sub_v));
+                            }
+                        }
+                    }
+                    for (sub_k, items) in merged_lists {
+                        let merged_key = format!("{full_key}/{sub_k}");
+                        if let Ok(serialized) = serde_json::to_string(&items) {
+                            out.insert(merged_key, serialized);
+                        }
+                    }
+                } else {
+                    if let Ok(serialized) = serde_json::to_string(arr) {
+                        out.insert(full_key, serialized);
+                    }
+                }
+            }
+            Value::String(s) => {
+                out.insert(full_key, s.clone());
+            }
+            Value::Null => {}
+            _ => {
+                out.insert(full_key, v.to_string());
+            }
+        }
+    }
 }
 
 /// Recursive XML element subtree parser to JSON Map

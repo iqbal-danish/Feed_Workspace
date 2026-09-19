@@ -12,7 +12,11 @@ from flask import Flask, render_template, request, jsonify, Response, send_file,
 from werkzeug.utils import secure_filename
 import config
 from utils import configure_logging, get_memory_usage_mb, format_size, ProgressEstimator
-from parser import stream_xml_records, stream_json_records, get_url_stream, detect_xml_job_element, detect_json_record_path
+from parser import (
+    stream_xml_records, stream_json_records,
+    stream_xml_batches, stream_json_batches,
+    get_url_stream, detect_xml_job_element, detect_json_record_path
+)
 from analyzer import FeedAnalyzerDb, get_analytics_connection, get_db_connection
 from filters import compile_filters
 from search import compile_search
@@ -203,44 +207,38 @@ def run_parsing_task(
         # 5. Determine correct generator and setup reject logging
         reject_log_path = os.path.join(config.REJECT_FOLDER, f"{task_id}.reject.log")
         if file_type == "xml":
-            records_gen = stream_xml_records(
-                stream, job_element_or_path, progress_callback, reject_log_path,
-                strict_mode=False, store_raw_content=store_raw_content
+            batches_gen = stream_xml_batches(
+                stream, job_element_or_path, batch_size=config.BATCH_SIZE,
+                progress_callback=progress_callback, reject_log_path=reject_log_path,
+                strict_mode=False, store_raw_content=store_raw_content,
+                skip_description=skip_description
             )
         else:
-            records_gen = stream_json_records(
-                stream, job_element_or_path, progress_callback, reject_log_path,
-                strict_mode=False, store_raw_content=store_raw_content
+            batches_gen = stream_json_batches(
+                stream, job_element_or_path, batch_size=config.BATCH_SIZE,
+                progress_callback=progress_callback, reject_log_path=reject_log_path,
+                strict_mode=False, store_raw_content=store_raw_content,
+                skip_description=skip_description
             )
 
         # 6. Stream parse and insert in batches
-        batch = []
         start_time = time.time()
+        last_progress_time = start_time
         
-        for record_dict, raw_content in records_gen:
-            if skip_description:
-                for k in list(record_dict.keys()):
-                    if 'description' in k.lower():
-                        del record_dict[k]
-            batch.append((record_dict, raw_content))
-            estimator.update(1, estimator.processed_bytes)
+        for batch in batches_gen:
+            db.insert_records(batch)
+            estimator.update(len(batch), estimator.processed_bytes)
             
-            # Periodically update records count and speed
-            if estimator.processed_records % 100 == 0:
+            # Periodically update records count and speed (rate-limited to avoid lock contention)
+            now = time.time()
+            if now - last_progress_time >= 0.25:
+                last_progress_time = now
                 with tasks_lock:
                     parsing_tasks[task_id].update({
                         "records_count": estimator.processed_records,
                         "speed": round(estimator.speed_records_per_sec, 1)
                     })
                     
-            if len(batch) >= config.BATCH_SIZE:
-                db.insert_records(batch)
-                batch.clear()
-
-        # Insert remaining records
-        if batch:
-            db.insert_records(batch)
-            
         if stream:
             stream.close()
 

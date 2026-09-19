@@ -386,3 +386,93 @@ def stream_json_records(
             with open(reject_log_path, "a", encoding="utf-8") as rf:
                 rf.write(f"Parser level JSON syntax error: {exc}\n")
         logger.warning(f"JSON parse error encountered: {exc}")
+
+def stream_xml_batches(
+    file_obj: Any,
+    job_element_tag: str,
+    batch_size: int = 10000,
+    progress_callback: Optional[Callable[[int], None]] = None,
+    reject_log_path: Optional[str] = None,
+    strict_mode: bool = False,
+    store_raw_content: bool = True,
+    skip_description: bool = False
+) -> Generator[List[Tuple[Dict[str, Any], str]], None, None]:
+    """Streams batches of pre-flattened XML records using native Rust when available."""
+    if HAS_RUST_CORE and hasattr(file_obj, 'name') and isinstance(file_obj.name, str) and os.path.isfile(file_obj.name) and not strict_mode:
+        try:
+            file_path = file_obj.name
+            total_size = os.path.getsize(file_path)
+            streamer = feed_core_rs.XmlRecordStreamer(file_path, job_element_tag, store_raw_content)
+            record_count = 0
+            while True:
+                batch = streamer.next_flat_batch(batch_size, skip_description)
+                if not batch:
+                    break
+                record_count += len(batch)
+                if progress_callback:
+                    progress_callback(min(total_size, record_count * 1024))
+                yield batch
+
+            if record_count == 0 and total_size == 0 and reject_log_path:
+                os.makedirs(os.path.dirname(os.path.abspath(reject_log_path)), exist_ok=True)
+                with open(reject_log_path, "a", encoding="utf-8") as rf:
+                    rf.write("Parser level XML syntax error: no element found\n")
+            if progress_callback:
+                progress_callback(total_size)
+            return
+        except Exception as e_rust:
+            if reject_log_path:
+                os.makedirs(os.path.dirname(os.path.abspath(reject_log_path)), exist_ok=True)
+                with open(reject_log_path, "a", encoding="utf-8") as rf:
+                    rf.write(f"Parser level XML syntax error: {e_rust}\n")
+            logger.debug(f"Rust XmlRecordStreamer next_flat_batch fallback: {e_rust}")
+            if hasattr(file_obj, 'seek'):
+                try:
+                    file_obj.seek(0)
+                except Exception:
+                    pass
+
+    # Fallback batching over standard stream_xml_records
+    batch = []
+    for record_dict, raw_content in stream_xml_records(
+        file_obj, job_element_tag, progress_callback, reject_log_path,
+        strict_mode=strict_mode, store_raw_content=store_raw_content
+    ):
+        if skip_description:
+            for k in list(record_dict.keys()):
+                if 'description' in k.lower():
+                    del record_dict[k]
+        batch.append((record_dict, raw_content))
+        if len(batch) >= batch_size:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
+
+def stream_json_batches(
+    file_obj: Any,
+    record_path: str,
+    batch_size: int = 10000,
+    progress_callback: Optional[Callable[[int], None]] = None,
+    reject_log_path: Optional[str] = None,
+    strict_mode: bool = False,
+    store_raw_content: bool = True,
+    skip_description: bool = False
+) -> Generator[List[Tuple[Dict[str, Any], str]], None, None]:
+    """Streams batches of JSON records."""
+    batch = []
+    for record_dict, raw_content in stream_json_records(
+        file_obj, record_path, progress_callback, reject_log_path,
+        strict_mode=strict_mode, store_raw_content=store_raw_content
+    ):
+        if skip_description:
+            for k in list(record_dict.keys()):
+                if 'description' in k.lower():
+                    del record_dict[k]
+        batch.append((record_dict, raw_content))
+        if len(batch) >= batch_size:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
+

@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 use std::fs::File;
+use std::collections::HashMap;
 
 pub mod parser;
 pub mod validator;
@@ -73,6 +74,20 @@ impl XmlRecordStreamer {
             Some(Err(err)) => Err(PyValueError::new_err(err)),
             None => Ok(None),
         }
+    }
+
+    /// Read next batch of pre-flattened records with GIL released
+    #[pyo3(signature = (batch_size = 10000, skip_description = false))]
+    fn next_flat_batch(
+        &mut self,
+        py: Python<'_>,
+        batch_size: usize,
+        skip_description: bool,
+    ) -> PyResult<Vec<(HashMap<String, String>, String)>> {
+        let store_raw = self.store_raw;
+        py.allow_threads(|| {
+            self.inner.next_flat_batch(batch_size, store_raw, skip_description)
+        }).map_err(|e| PyValueError::new_err(e))
     }
 }
 

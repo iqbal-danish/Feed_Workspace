@@ -26,10 +26,11 @@ logger = logging.getLogger("xml_validator_pro.main_window")
 
 class CustomWebEnginePage(QWebEnginePage):
     """Custom QWebEnginePage subclass that redirects console messages to python logs."""
-
     def javaScriptConsoleMessage(self, level, message, line, source) -> None:
         try:
-            with open(r"C:\Users\diqbal\OneDrive - CareerBuilder\Python\Feed_Utils\js_console.log", "a", encoding="utf-8") as f:
+            log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            with open(os.path.join(log_dir, "js_console.log"), "a", encoding="utf-8") as f:
                 f.write(f"[{level}] {source}:{line} -> {message}\n")
         except Exception:
             pass

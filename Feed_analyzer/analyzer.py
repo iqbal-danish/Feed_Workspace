@@ -99,7 +99,7 @@ def get_db_connection(db_path: str) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode = MEMORY")
     conn.execute("PRAGMA temp_store = MEMORY")
     conn.execute("PRAGMA page_size = 65536")
-    conn.execute("PRAGMA cache_size = -64000")
+    conn.execute("PRAGMA cache_size = -128000")
     conn.execute("PRAGMA mmap_size = 30000000000")
     return conn
 
@@ -109,6 +109,7 @@ class FeedAnalyzerDb:
         self.db_path = db_path
         self.conn: Optional[sqlite3.Connection] = None
         self.field_mappings: Dict[str, str] = {}  # Maps path -> column_name (e.g. "Location/City" -> "col_1")
+        self.known_fields_set: set = set()
         self.next_col_index = 0
         self._init_db()
 
@@ -170,6 +171,7 @@ class FeedAnalyzerDb:
             for row in cursor.fetchall():
                 path, col = row[0], row[1]
                 self.field_mappings[path] = col
+                self.known_fields_set.add(path)
                 # Keep track of col index to avoid collisions
                 match = re.match(r"col_(\d+)", col)
                 if match:
@@ -193,21 +195,34 @@ class FeedAnalyzerDb:
         self.conn.commit()
         
         self.field_mappings[field_path] = col_name
+        self.known_fields_set.add(field_path)
         logger.info(f"Added column {col_name} for field path '{field_path}'")
         return col_name
 
     def insert_records(self, records_batch: List[Tuple[Dict[str, Any], str]]) -> None:
-        """Inserts a batch of records into SQLite using O(K) sparse mapping and high-throughput executemany."""
+        """Inserts a batch of records into SQLite using single-pass sparse mapping and high-throughput executemany."""
+        if not records_batch:
+            return
+
         self.open()
         assert self.conn is not None
         
-        # 1. Identify all new columns in this batch and add them first (outside transaction)
-        new_fields = []
-        for record_dict, _ in records_batch:
-            flat_data = self._flatten_record(record_dict)
+        # 1. Identify any new columns in this batch and flatten records once
+        flattened_batch: List[Tuple[Dict[str, Any], str]] = []
+        new_fields: List[str] = []
+        
+        for record_dict, raw_content in records_batch:
+            # Bypass recursive flattening if records are already flat (e.g. from Rust native streamer)
+            if any(isinstance(v, dict) for v in record_dict.values()):
+                flat_data = self._flatten_record(record_dict)
+            else:
+                flat_data = record_dict
+            flattened_batch.append((flat_data, raw_content))
+            
             for field_path in flat_data.keys():
-                if field_path not in self.field_mappings and field_path not in new_fields:
-                    new_fields.append(field_path)
+                if field_path not in self.known_fields_set:
+                    if field_path not in new_fields:
+                        new_fields.append(field_path)
                     
         for field_path in new_fields:
             self._add_new_column(field_path)
@@ -222,10 +237,9 @@ class FeedAnalyzerDb:
         field_to_idx = {field: i + 1 for i, field in enumerate(sorted_fields)}
         num_columns = len(columns)
         
-        # 3. Prepare parameters for all rows in the batch in O(K) time per record
+        # 3. Prepare parameters for all rows using the single flattened batch
         row_values = []
-        for record_dict, raw_content in records_batch:
-            flat_data = self._flatten_record(record_dict)
+        for flat_data, raw_content in flattened_batch:
             vals = [None] * num_columns
             vals[0] = raw_content
             
@@ -256,27 +270,40 @@ class FeedAnalyzerDb:
 
     def save_metadata(self, metadata: Dict[str, str]) -> None:
         """Saves metadata key-values to feed_info table."""
-        conn = sqlite3.connect(self.db_path)
-        try:
-            with conn:
+        if self.conn:
+            with self.conn:
                 for k, v in metadata.items():
-                    conn.execute(
+                    self.conn.execute(
                         "INSERT OR REPLACE INTO feed_info (key, value) VALUES (?, ?)",
                         (k, str(v))
                     )
-        finally:
-            conn.close()
+        else:
+            conn = sqlite3.connect(self.db_path)
+            try:
+                with conn:
+                    for k, v in metadata.items():
+                        conn.execute(
+                            "INSERT OR REPLACE INTO feed_info (key, value) VALUES (?, ?)",
+                            (k, str(v))
+                        )
+            finally:
+                conn.close()
 
     def get_metadata(self) -> Dict[str, str]:
         """Retrieves all metadata from the database."""
-        conn = sqlite3.connect(self.db_path)
         metadata = {}
-        try:
-            cursor = conn.execute("SELECT key, value FROM feed_info")
+        if self.conn:
+            cursor = self.conn.execute("SELECT key, value FROM feed_info")
             for row in cursor.fetchall():
                 metadata[row[0]] = row[1]
-        finally:
-            conn.close()
+        else:
+            conn = sqlite3.connect(self.db_path)
+            try:
+                cursor = conn.execute("SELECT key, value FROM feed_info")
+                for row in cursor.fetchall():
+                    metadata[row[0]] = row[1]
+            finally:
+                conn.close()
         return metadata
 
     def get_schema_tree(self) -> Dict[str, Any]:
