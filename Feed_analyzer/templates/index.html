@@ -57,9 +57,16 @@
 
                         <!-- File Input Wrapper -->
                         <div class="mb-4" id="fileInputWrapper">
-                            <label for="xml_file" class="form-label text-secondary">Browse File</label>
-                            <input class="form-control" type="file" id="xml_file" name="xml_file" accept=".xml,.json">
-                            <div class="form-text text-muted">Supports raw XML and JSON feeds.</div>
+                            <label class="form-label text-secondary">Browse File</label>
+                            <div class="input-group">
+                                <input class="form-control text-white" type="text" id="selectedFilePathDisplay" placeholder="Click Browse to select XML or JSON feed..." readonly style="background: rgba(0,0,0,0.3); border-color: var(--border-color); cursor: pointer;">
+                                <button class="btn btn-outline-primary px-3" type="button" id="browseFileBtn">
+                                    <i class="bi bi-folder2-open me-1"></i> Browse
+                                </button>
+                            </div>
+                            <input class="d-none" type="file" id="xml_file" name="xml_file" accept=".xml,.json">
+                            <input type="hidden" id="local_file_path" name="local_file_path" value="">
+                            <div class="form-text text-muted">Direct instant parsing for feeds of any size (100MB to 50GB+).</div>
                         </div>
 
                         <!-- URL Input Wrapper -->
@@ -191,7 +198,47 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     
     <!-- Page Controller Javascript -->
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
     <script>
+        let pyBridge = null;
+        let selectedLocalPath = "";
+
+        if (typeof QWebChannel !== "undefined" && typeof qt !== "undefined") {
+            try {
+                new QWebChannel(qt.webChannelTransport, (channel) => {
+                    pyBridge = channel.objects.pyBridge || null;
+                });
+            } catch (e) {
+                console.log("QWebChannel init: " + e);
+            }
+        }
+
+        document.getElementById('browseFileBtn').addEventListener('click', function() {
+            if (pyBridge && typeof pyBridge.select_file_dialog === 'function') {
+                pyBridge.select_file_dialog((filePath) => {
+                    if (filePath) {
+                        selectedLocalPath = filePath;
+                        document.getElementById('local_file_path').value = filePath;
+                        document.getElementById('selectedFilePathDisplay').value = filePath;
+                    }
+                });
+            } else {
+                document.getElementById('xml_file').click();
+            }
+        });
+
+        document.getElementById('selectedFilePathDisplay').addEventListener('click', function() {
+            document.getElementById('browseFileBtn').click();
+        });
+
+        document.getElementById('xml_file').addEventListener('change', function() {
+            if (this.files && this.files[0]) {
+                selectedLocalPath = "";
+                document.getElementById('local_file_path').value = "";
+                document.getElementById('selectedFilePathDisplay').value = this.files[0].name;
+            }
+        });
+
         // Toggle input wrappers
         document.getElementById('sourceFile').addEventListener('change', function() {
             document.getElementById('fileInputWrapper').classList.remove('d-none');
@@ -207,14 +254,18 @@
             e.preventDefault();
             
             const formData = new FormData(this);
-            
-            // Basic client side validation
             const sourceType = formData.get('source_type');
-            if (sourceType === 'file' && !document.getElementById('xml_file').files[0]) {
-                alert("Please select a file to upload.");
-                return;
-            }
-            if (sourceType === 'url' && !document.getElementById('xml_url').value.trim()) {
+
+            if (sourceType === 'file') {
+                if (!selectedLocalPath && !document.getElementById('xml_file').files[0]) {
+                    alert("Please select a file to analyze.");
+                    return;
+                }
+                if (selectedLocalPath) {
+                    formData.set('local_file_path', selectedLocalPath);
+                    formData.delete('xml_file');
+                }
+            } else if (sourceType === 'url' && !document.getElementById('xml_url').value.trim()) {
                 alert("Please enter a valid feed URL.");
                 return;
             }
@@ -226,7 +277,7 @@
             // Reset Progress UI
             document.getElementById('progressTitle').innerText = "Analyzing Feed...";
             document.getElementById('progressFilename').innerText = sourceType === 'file' 
-                ? document.getElementById('xml_file').files[0].name 
+                ? (selectedLocalPath ? selectedLocalPath.split(/[\\/]/).pop() : document.getElementById('xml_file').files[0].name)
                 : document.getElementById('xml_url').value;
             document.getElementById('progressBarFill').style.width = "0%";
             document.getElementById('progressPercent').innerText = "0% Complete";

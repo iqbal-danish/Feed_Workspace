@@ -72,6 +72,21 @@ class AnalyzerDownloadBridge(QObject):
         self.download_log_path = os.path.join(WORKSPACE_DIR, "logs", "feed_workspace_downloads.log")
         self.default_reports_dir = os.path.join(WORKSPACE_DIR, "Feed_analyzer", "reports")
 
+    @Slot(result=str)
+    def select_file_dialog(self) -> str:
+        """Opens a native desktop file dialog to pick an XML or JSON feed directly without HTTP upload."""
+        try:
+            file_path, _ = QFileDialog.getOpenFileName(
+                self.parent_window,
+                "Select Feed File",
+                "",
+                "Feed Files (*.xml *.json *.xml.gz);;XML Files (*.xml *.xml.gz);;JSON Files (*.json);;All Files (*)"
+            )
+            return file_path or ""
+        except Exception as e:
+            logger.error(f"Error opening select file dialog: {e}")
+            return ""
+
     @Slot(str, str, str, str, result=str)
     def download_file(self, url: str, suggested_name: str, method: str = "GET", payload_json: str = "") -> str:
         try:
