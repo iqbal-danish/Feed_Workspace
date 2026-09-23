@@ -36,8 +36,28 @@ pub fn validate_xml_file(
     max_errors: usize,
     context_window: usize,
 ) -> Result<Vec<RustValidationError>, String> {
-    let file = File::open(file_path).map_err(|e| format!("Cannot open file '{file_path}': {e}"))?;
-    let mut reader = BufReader::with_capacity(128 * 1024, file);
+    use std::io::Read;
+    let mut file = File::open(file_path).map_err(|e| format!("Cannot open file '{file_path}': {e}"))?;
+    let mut magic = [0u8; 2];
+    let n = file.read(&mut magic).unwrap_or(0);
+    file.seek(SeekFrom::Start(0)).map_err(|e| format!("Cannot seek file '{file_path}': {e}"))?;
+
+    let is_gz = (n >= 2 && magic[0] == 0x1f && magic[1] == 0x8b) || file_path.to_lowercase().ends_with(".gz");
+    if is_gz {
+        let gz = flate2::read::GzDecoder::new(file);
+        validate_xml_from_reader(file_path, BufReader::with_capacity(128 * 1024, gz), max_errors, context_window, true)
+    } else {
+        validate_xml_from_reader(file_path, BufReader::with_capacity(128 * 1024, file), max_errors, context_window, false)
+    }
+}
+
+fn validate_xml_from_reader<R: BufRead>(
+    file_path: &str,
+    mut reader: R,
+    max_errors: usize,
+    context_window: usize,
+    is_gz: bool,
+) -> Result<Vec<RustValidationError>, String> {
 
     let mut errors = Vec::new();
     let mut stack: Vec<TagOpenInfo> = Vec::with_capacity(64);
@@ -338,10 +358,20 @@ fn check_xml_attributes(attr_str: &str) -> Option<String> {
 /// Extracts surrounding context lines from file around an error
 fn extract_context(file_path: &str, error_line: usize, window: usize) -> Vec<RustContextLine> {
     let mut context = Vec::new();
-    let Ok(file) = File::open(file_path) else {
+    let Ok(mut file) = File::open(file_path) else {
         return context;
     };
-    let mut reader = BufReader::new(file);
+    use std::io::Read;
+    let mut magic = [0u8; 2];
+    let n = file.read(&mut magic).unwrap_or(0);
+    let _ = file.seek(SeekFrom::Start(0));
+    let is_gz = (n >= 2 && magic[0] == 0x1f && magic[1] == 0x8b) || file_path.to_lowercase().ends_with(".gz");
+
+    let mut reader: Box<dyn BufRead> = if is_gz {
+        Box::new(BufReader::new(flate2::read::GzDecoder::new(file)))
+    } else {
+        Box::new(BufReader::new(file))
+    };
 
     let start_line = error_line.saturating_sub(window).max(1);
     let end_line = error_line + window;

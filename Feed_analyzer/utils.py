@@ -149,29 +149,22 @@ def handle_compressed_file(file_path: str, task_id: str, upload_folder: str) -> 
             return file_path, os.path.basename(file_path)
 
     # 2. GZIP Archive (magic header 1F 8B or .gz/.gzip)
+    # Native feed_core_rs streams and decompresses .gz directly on the fly.
+    # We do NOT decompress to disk, eliminating upfront delays and disk bloat!
     if header.startswith(b'\x1f\x8b') or file_path.lower().endswith(('.gz', '.gzip')):
-        try:
-            base_name = os.path.basename(file_path)
-            if base_name.lower().endswith('.gz'):
-                inner_filename = base_name[:-3]
-            elif base_name.lower().endswith('.gzip'):
-                inner_filename = base_name[:-5]
-            else:
-                inner_filename = base_name + ".decompressed"
+        base_name = os.path.basename(file_path)
+        if base_name.lower().endswith('.gz'):
+            inner_filename = base_name[:-3]
+        elif base_name.lower().endswith('.gzip'):
+            inner_filename = base_name[:-5]
+        else:
+            inner_filename = base_name
 
-            if inner_filename.startswith(f"{task_id}_"):
-                inner_filename = inner_filename[len(f"{task_id}_"):]
+        if inner_filename.startswith(f"{task_id}_"):
+            inner_filename = inner_filename[len(f"{task_id}_"):]
 
-            decompressed_path = os.path.join(upload_folder, f"{task_id}_{secure_filename(inner_filename)}")
-            
-            with gzip.open(file_path, 'rb') as gz_in, open(decompressed_path, 'wb') as f_out:
-                shutil.copyfileobj(gz_in, f_out, length=1024 * 1024)
-
-            logger.info(f"Decompressed GZIP file {file_path} -> {decompressed_path} ({os.path.getsize(decompressed_path)} bytes)")
-            return decompressed_path, inner_filename
-        except Exception as e:
-            logger.error(f"Failed to decompress GZIP file {file_path}: {e}")
-            return file_path, os.path.basename(file_path)
+        logger.info(f"Detected GZIP feed {file_path}; streaming decompressed on the fly via feed_core_rs.")
+        return file_path, inner_filename
 
     # 3. TAR / TAR.GZ Archive
     if file_path.lower().endswith(('.tar.gz', '.tgz', '.tar')):
@@ -202,3 +195,18 @@ def handle_compressed_file(file_path: str, task_id: str, upload_folder: str) -> 
             return file_path, os.path.basename(file_path)
 
     return file_path, os.path.basename(file_path)
+
+
+def get_gz_uncompressed_size(file_path: str) -> Optional[int]:
+    """Reads the uncompressed ISIZE field from the last 4 bytes of a GZIP file."""
+    try:
+        with open(file_path, 'rb') as f:
+            f.seek(-4, os.SEEK_END)
+            isize = int.from_bytes(f.read(4), 'little')
+            comp_size = os.path.getsize(file_path)
+            # If isize is 0 or less than compressed size, gz is likely >= 4GB (ISIZE is modulo 2^32)
+            if isize < comp_size:
+                return comp_size * 5
+            return isize
+    except Exception:
+        return None

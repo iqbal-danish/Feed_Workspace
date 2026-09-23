@@ -62,9 +62,25 @@ fn strip_namespace(name: &str) -> &str {
 
 /// Detects the repeating job element tag in an XML file at blazing speed
 pub fn detect_xml_job_element(file_path: &str, limit_bytes: usize) -> Result<String, String> {
-    let file = File::open(file_path).map_err(|e| format!("Failed to open file: {e}"))?;
-    let limited = LimitedReader::new(file, limit_bytes);
-    let mut reader = Reader::from_reader(BufReader::with_capacity(64 * 1024, limited));
+    use std::io::{Seek, SeekFrom};
+    let mut file = File::open(file_path).map_err(|e| format!("Failed to open file: {e}"))?;
+    let mut magic = [0u8; 2];
+    let n = file.read(&mut magic).unwrap_or(0);
+    file.seek(SeekFrom::Start(0)).map_err(|e| format!("Failed to seek file: {e}"))?;
+
+    let is_gz = (n >= 2 && magic[0] == 0x1f && magic[1] == 0x8b) || file_path.to_lowercase().ends_with(".gz");
+    if is_gz {
+        let gz = flate2::read::GzDecoder::new(file);
+        let limited = LimitedReader::new(gz, limit_bytes);
+        detect_xml_from_reader(limited)
+    } else {
+        let limited = LimitedReader::new(file, limit_bytes);
+        detect_xml_from_reader(limited)
+    }
+}
+
+fn detect_xml_from_reader<R: Read>(reader_source: R) -> Result<String, String> {
+    let mut reader = Reader::from_reader(BufReader::with_capacity(64 * 1024, reader_source));
     reader.config_mut().trim_text(true);
 
     let mut buf = Vec::with_capacity(4096);

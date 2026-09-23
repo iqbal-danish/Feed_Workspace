@@ -43,10 +43,40 @@ fn compute_record_hash_rs(record_json: &str, key_fields: Vec<String>) -> PyResul
     Ok(dedup::compute_record_hash(&val, &key_fields))
 }
 
+pub enum XmlStreamSource {
+    Plain(File),
+    Gz(flate2::read::GzDecoder<File>),
+}
+
+impl std::io::Read for XmlStreamSource {
+    #[inline]
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            XmlStreamSource::Plain(f) => f.read(buf),
+            XmlStreamSource::Gz(gz) => gz.read(buf),
+        }
+    }
+}
+
+pub fn open_xml_source(file_path: &str) -> std::io::Result<XmlStreamSource> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = File::open(file_path)?;
+    let mut magic = [0u8; 2];
+    let n = file.read(&mut magic).unwrap_or(0);
+    file.seek(SeekFrom::Start(0))?;
+
+    let is_gz = (n >= 2 && magic[0] == 0x1f && magic[1] == 0x8b) || file_path.to_lowercase().ends_with(".gz");
+    if is_gz {
+        Ok(XmlStreamSource::Gz(flate2::read::GzDecoder::new(file)))
+    } else {
+        Ok(XmlStreamSource::Plain(file))
+    }
+}
+
 /// PyO3 Streaming XML Record Iterator
 #[pyclass]
 struct XmlRecordStreamer {
-    inner: parser::xml::XmlRecordStream<File>,
+    inner: parser::xml::XmlRecordStream<XmlStreamSource>,
     store_raw: bool,
 }
 
@@ -55,10 +85,10 @@ impl XmlRecordStreamer {
     #[new]
     #[pyo3(signature = (file_path, tag_name, store_raw = true))]
     fn new(file_path: &str, tag_name: &str, store_raw: bool) -> PyResult<Self> {
-        let file = File::open(file_path)
+        let source = open_xml_source(file_path)
             .map_err(|e| PyValueError::new_err(format!("Cannot open file '{file_path}': {e}")))?;
         Ok(Self {
-            inner: parser::xml::XmlRecordStream::new(file, tag_name),
+            inner: parser::xml::XmlRecordStream::new(source, tag_name),
             store_raw,
         })
     }

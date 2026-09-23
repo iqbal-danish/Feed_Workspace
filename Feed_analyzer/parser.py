@@ -235,7 +235,9 @@ def detect_xml_job_element(file_path: str, limit_bytes: int = 5*1024*1024) -> st
             self.read_bytes += len(chunk)
             return chunk
 
-    with open(file_path, 'rb') as f:
+    import gzip
+    open_fn = gzip.open if file_path.lower().endswith(('.gz', '.gzip')) else open
+    with open_fn(file_path, 'rb') as f:
         limited_f = LimitedReader(f, limit_bytes)
         try:
             stack = []
@@ -445,7 +447,14 @@ def stream_xml_records(
                 except Exception:
                     pass
 
-    wrapped_file = ProgressFileWrapper(file_obj, progress_callback)
+    target_stream = file_obj
+    if hasattr(file_obj, 'name') and str(file_obj.name).lower().endswith(('.gz', '.gzip')):
+        import gzip
+        try:
+            target_stream = gzip.open(file_obj.name, 'rb')
+        except Exception:
+            target_stream = file_obj
+    wrapped_file = ProgressFileWrapper(target_stream, progress_callback)
     
     # Enable recovery directly inside iterparse to heal malformed tags
     try:
@@ -478,7 +487,14 @@ def stream_json_records(
     store_raw_content: bool = True
 ) -> Generator[Tuple[Dict[str, Any], str], None, None]:
     """Streams record items from a JSON file-like object using ijson."""
-    wrapped_file = ProgressFileWrapper(file_obj, progress_callback)
+    target_stream = file_obj
+    if hasattr(file_obj, 'name') and str(file_obj.name).lower().endswith(('.gz', '.gzip')):
+        import gzip
+        try:
+            target_stream = gzip.open(file_obj.name, 'rb')
+        except Exception:
+            target_stream = file_obj
+    wrapped_file = ProgressFileWrapper(target_stream, progress_callback)
     
     try:
         items = ijson.items(wrapped_file, record_path)

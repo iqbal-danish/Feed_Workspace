@@ -11,7 +11,7 @@ import datetime
 from flask import Flask, render_template, request, jsonify, Response, send_file, redirect, url_for
 from werkzeug.utils import secure_filename
 import config
-from utils import configure_logging, get_memory_usage_mb, format_size, ProgressEstimator, handle_compressed_file
+from utils import configure_logging, get_memory_usage_mb, format_size, ProgressEstimator, handle_compressed_file, get_gz_uncompressed_size
 from parser import (
     stream_xml_records, stream_json_records,
     stream_xml_batches, stream_json_batches,
@@ -177,11 +177,16 @@ def run_parsing_task(
                         hint = f"{source_path_or_url} {ct}"
                 file_type = detect_content_type_from_bytes(peek_data, hint)
         else:
-            total_size = os.path.getsize(source_path_or_url)
             stream = open(source_path_or_url, 'rb')
             peek_data = stream.read(2048)
             stream.seek(0)
             file_type = detect_content_type_from_bytes(peek_data, source_path_or_url)
+
+            is_gz = source_path_or_url.lower().endswith(('.gz', '.gzip')) or peek_data.startswith(b'\x1f\x8b')
+            if is_gz:
+                total_size = get_gz_uncompressed_size(source_path_or_url) or (os.path.getsize(source_path_or_url) * 5)
+            else:
+                total_size = os.path.getsize(source_path_or_url)
 
         # 2. Setup SQLite Cache
         db_path = os.path.join(config.DB_FOLDER, f"{task_id}.db")

@@ -4,7 +4,7 @@ import unittest
 import json
 import duckdb
 from config import BASE_DIR
-from parser import stream_xml_records, stream_json_records
+from parser import stream_xml_records, stream_json_records, stream_xml_batches
 from analyzer import FeedAnalyzerDb, get_analytics_connection
 from filters import compile_filters
 
@@ -171,9 +171,11 @@ class TestStreamingPipeline(unittest.TestCase):
 
         decomp_path, inner_name = handle_compressed_file(gz_path, "task_gz_1", self.test_dir.name)
         self.assertEqual(inner_name, "feed.xml")
-        self.assertTrue(os.path.isfile(decomp_path))
-        with open(decomp_path, "rb") as f:
-            self.assertEqual(f.read(), xml_data)
+        self.assertEqual(decomp_path, gz_path)
+        with open(gz_path, "rb") as f:
+            batches = list(stream_xml_batches(f, "job", batch_size=10))
+            self.assertEqual(len(batches), 1)
+            self.assertEqual(batches[0][0][0]["title"], "GZ Engineer")
 
         # 2. Test ZIP JSON
         zip_path = os.path.join(self.test_dir.name, "bundle.zip")
