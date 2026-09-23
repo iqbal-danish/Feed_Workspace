@@ -124,6 +124,48 @@ class PeekableStream:
     def __getattr__(self, name: str) -> Any:
         return getattr(self.raw_stream, name)
 
+
+def detect_content_type_from_bytes(peek_bytes: bytes, fallback_hint: str = "") -> str:
+    """Inspects the leading bytes of a file or stream to determine if it is XML or JSON."""
+    if not peek_bytes:
+        return "xml" if "xml" in fallback_hint.lower() else "json"
+        
+    if peek_bytes.startswith(b'\xef\xbb\xbf'):
+        peek_bytes = peek_bytes[3:]
+
+    # Check for GZIP magic header (1f 8b)
+    if peek_bytes.startswith(b'\x1f\x8b'):
+        try:
+            import gzip
+            decompressed = gzip.decompress(peek_bytes[:2048])
+            return detect_content_type_from_bytes(decompressed, fallback_hint)
+        except Exception:
+            return "xml" if "xml" in fallback_hint.lower() else "json"
+            
+    text = peek_bytes.decode('utf-8', errors='ignore').strip().lower()
+    
+    # XML markers
+    if text.startswith('<?xml') or text.startswith('<') or '<xml' in text or '<rss' in text or '<feed' in text:
+        return "xml"
+        
+    # JSON markers
+    if text.startswith('{') or text.startswith('['):
+        return "json"
+        
+    # Fallback to file extension or URL hint
+    hint_lower = fallback_hint.lower()
+    if any(hint_lower.endswith(ext) for ext in ('.xml', '.xml.gz', '.rss', '.atom')):
+        return "xml"
+    if any(hint_lower.endswith(ext) for ext in ('.json', '.json.gz', '.jsonl', '.ndjson')):
+        return "json"
+    if 'xml' in hint_lower or 'rss' in hint_lower or 'atom' in hint_lower:
+        return "xml"
+    if 'json' in hint_lower:
+        return "json"
+        
+    return "xml"
+
+
 def get_url_stream(url: str, timeout: int = 30) -> Tuple[Any, int]:
     """Downloads a URL as a stream and returns the stream and content length."""
     req = urllib.request.Request(

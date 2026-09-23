@@ -121,5 +121,42 @@ class TestStreamingPipeline(unittest.TestCase):
         conn.close()
         db.close()
 
+    def test_peekable_stream(self):
+        from parser import PeekableStream
+        import io
+        raw = io.BytesIO(b" world from stream")
+        peek = b"Hello"
+        s = PeekableStream(raw, peek)
+        self.assertEqual(s.read(5), b"Hello")
+        self.assertEqual(s.read(6), b" world")
+        self.assertEqual(s.read(), b" from stream")
+
+    def test_detect_content_type_from_bytes(self):
+        from parser import detect_content_type_from_bytes
+        # XML standard
+        self.assertEqual(detect_content_type_from_bytes(b'<?xml version="1.0"?><root></root>'), "xml")
+        # XML without declaration
+        self.assertEqual(detect_content_type_from_bytes(b'   <jobs><job><title>Engineer</title></job></jobs>'), "xml")
+        # XML from PHP URL
+        self.assertEqual(detect_content_type_from_bytes(b'<?xml version="1.0" encoding="UTF-8"?><source></source>', "getFeed.php?jobBoard=123"), "xml")
+        # JSON Object
+        self.assertEqual(detect_content_type_from_bytes(b'{"jobs": [{"title": "Dev"}]}'), "json")
+        # JSON Array
+        self.assertEqual(detect_content_type_from_bytes(b'[{"title": "Dev"}]'), "json")
+        # Fallback hint
+        self.assertEqual(detect_content_type_from_bytes(b'', "feed.xml"), "xml")
+        self.assertEqual(detect_content_type_from_bytes(b'', "feed.json"), "json")
+
+    def test_duckdb_alias_compatibility(self):
+        conn = duckdb.connect(":memory:")
+        conn.execute("CREATE TABLE records (id INTEGER, raw_content TEXT, col_1 TEXT)")
+        conn.execute("INSERT INTO records VALUES (1, '{\"a\": 1}', 'Acme')")
+        query = 'SELECT id as "_row_id", raw_content as "_raw_content", col_1 as "job/title" FROM records'
+        row = conn.execute(query).fetchone()
+        self.assertEqual(row[0], 1)
+        self.assertEqual(row[1], '{"a": 1}')
+        self.assertEqual(row[2], 'Acme')
+        conn.close()
+
 if __name__ == '__main__':
     unittest.main()

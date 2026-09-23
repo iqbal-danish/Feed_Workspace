@@ -16,7 +16,7 @@ from parser import (
     stream_xml_records, stream_json_records,
     stream_xml_batches, stream_json_batches,
     get_url_stream, detect_xml_job_element, detect_json_record_path,
-    PeekableStream
+    PeekableStream, detect_content_type_from_bytes
 )
 try:
     from fast_downloader import download_file_fast
@@ -145,28 +145,22 @@ def run_parsing_task(
 
         if is_url:
             raw_stream, total_size = get_url_stream(source_path_or_url, config.DEFAULT_TIMEOUT_SECONDS)
-            # Peek first 500 bytes to check content
-            peek_data = raw_stream.read(500) if raw_stream else b""
+            # Peek first 2048 bytes to check content
+            peek_data = raw_stream.read(2048) if raw_stream else b""
             stream = PeekableStream(raw_stream, peek_data)
             
-            peek_str = peek_data.decode('utf-8', errors='ignore').strip().lower()
-            if peek_str.startswith('<?xml') or peek_str.startswith('<') or '<xml' in peek_str:
-                file_type = "xml"
-            elif peek_str.startswith('{') or peek_str.startswith('['):
-                file_type = "json"
-            else:
-                # Fallback to headers or URL path match
-                content_type = stream.headers.get('Content-Type', '').lower() if hasattr(stream, 'headers') else ''
-                if 'xml' in content_type:
-                    file_type = "xml"
-                elif 'json' in content_type:
-                    file_type = "json"
-                else:
-                    file_type = "xml" if "xml" in source_path_or_url.lower() else "json"
+            hint = source_path_or_url
+            if hasattr(raw_stream, 'headers'):
+                ct = raw_stream.headers.get('Content-Type', '')
+                if ct:
+                    hint = f"{source_path_or_url} {ct}"
+            file_type = detect_content_type_from_bytes(peek_data, hint)
         else:
             total_size = os.path.getsize(source_path_or_url)
             stream = open(source_path_or_url, 'rb')
-            file_type = "xml" if source_path_or_url.lower().endswith(('.xml', '.xml.gz')) else "json"
+            peek_data = stream.read(2048)
+            stream.seek(0)
+            file_type = detect_content_type_from_bytes(peek_data, source_path_or_url)
 
         # 2. Setup SQLite Cache
         db_path = os.path.join(config.DB_FOLDER, f"{task_id}.db")
@@ -579,11 +573,12 @@ def run_query(task_id):
             # Select Safe Column Mappings
             col_selections = []
             for path, col in mappings.items():
-                col_selections.append(f"{col} as [{path}]")
+                safe_path = path.replace('"', '""')
+                col_selections.append(f'{col} as "{safe_path}"')
             col_selections_str = ", " + ", ".join(col_selections) if col_selections else ""
             
             query = f"""
-                SELECT id as [_row_id], raw_content as [_raw_content] {col_selections_str}
+                SELECT id as "_row_id", raw_content as "_raw_content" {col_selections_str}
                 FROM records
                 {where_clause}
                 LIMIT {config.MAX_PREVIEW_ROWS}
