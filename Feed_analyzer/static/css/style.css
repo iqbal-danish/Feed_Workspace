@@ -11,9 +11,9 @@
     --secondary: #0ea5e9;
     --secondary-glow: rgba(14, 165, 233, 0.15);
     
-    --text-primary: #f3f4f6;
-    --text-secondary: #9ca3af;
-    --text-muted: #6b7280;
+    --text-primary: #f8fafc;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
     
     --success: #10b981;
     --danger: #ef4444;
@@ -86,6 +86,26 @@ h1, h2, h3, h4, h5, h6 {
     border-color: var(--primary);
     box-shadow: 0 0 0 4px var(--primary-glow);
     color: var(--text-primary);
+}
+
+/* Explicit high-contrast placeholders */
+::placeholder,
+.form-control::placeholder,
+input::placeholder,
+textarea::placeholder {
+    color: #94a3b8 !important;
+    opacity: 0.85 !important;
+}
+
+/* Contrast helpers for helper text and secondary labels in dark theme */
+.form-text,
+.form-text.text-muted,
+.text-muted {
+    color: #94a3b8 !important;
+}
+
+.text-secondary {
+    color: #cbd5e1 !important;
 }
 
 /* Custom Buttons */
