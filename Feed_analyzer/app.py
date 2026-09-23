@@ -11,7 +11,7 @@ import datetime
 from flask import Flask, render_template, request, jsonify, Response, send_file, redirect, url_for
 from werkzeug.utils import secure_filename
 import config
-from utils import configure_logging, get_memory_usage_mb, format_size, ProgressEstimator
+from utils import configure_logging, get_memory_usage_mb, format_size, ProgressEstimator, handle_compressed_file
 from parser import (
     stream_xml_records, stream_json_records,
     stream_xml_batches, stream_json_batches,
@@ -143,18 +143,39 @@ def run_parsing_task(
             except Exception as e_dl:
                 logger.warning(f"Parallel download fallback to direct stream: {e_dl}")
 
+        if not is_url:
+            with tasks_lock:
+                parsing_tasks[task_id].update({
+                    "status": "inspecting archive"
+                })
+            source_path_or_url, inner_filename = handle_compressed_file(
+                source_path_or_url, task_id, config.UPLOAD_FOLDER
+            )
+            if inner_filename != original_filename:
+                original_filename = inner_filename
+                with tasks_lock:
+                    parsing_tasks[task_id]["filename"] = inner_filename
+
         if is_url:
             raw_stream, total_size = get_url_stream(source_path_or_url, config.DEFAULT_TIMEOUT_SECONDS)
             # Peek first 2048 bytes to check content
             peek_data = raw_stream.read(2048) if raw_stream else b""
-            stream = PeekableStream(raw_stream, peek_data)
             
-            hint = source_path_or_url
-            if hasattr(raw_stream, 'headers'):
-                ct = raw_stream.headers.get('Content-Type', '')
-                if ct:
-                    hint = f"{source_path_or_url} {ct}"
-            file_type = detect_content_type_from_bytes(peek_data, hint)
+            # Direct GZIP stream handling
+            if peek_data.startswith(b'\x1f\x8b'):
+                import gzip
+                gz_stream = gzip.GzipFile(fileobj=PeekableStream(raw_stream, peek_data))
+                decomp_peek = gz_stream.read(2048)
+                stream = PeekableStream(gz_stream, decomp_peek)
+                file_type = detect_content_type_from_bytes(decomp_peek, source_path_or_url)
+            else:
+                stream = PeekableStream(raw_stream, peek_data)
+                hint = source_path_or_url
+                if hasattr(raw_stream, 'headers'):
+                    ct = raw_stream.headers.get('Content-Type', '')
+                    if ct:
+                        hint = f"{source_path_or_url} {ct}"
+                file_type = detect_content_type_from_bytes(peek_data, hint)
         else:
             total_size = os.path.getsize(source_path_or_url)
             stream = open(source_path_or_url, 'rb')

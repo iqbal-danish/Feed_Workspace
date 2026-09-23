@@ -86,9 +86,10 @@ class AnalyzerDownloadBridge(QObject):
         try:
             if HAS_RUST_CORE and hasattr(feed_core_rs, "select_file_dialog_rs"):
                 filters = [
-                    ("Feed Files", ["xml", "json", "gz"]),
+                    ("Feed Files", ["xml", "json", "gz", "zip", "tgz"]),
                     ("XML Files", ["xml", "gz"]),
                     ("JSON Files", ["json"]),
+                    ("Compressed Archives", ["zip", "gz", "tgz", "tar"]),
                     ("All Files", ["*"])
                 ]
                 return feed_core_rs.select_file_dialog_rs("Select Feed File", filters) or ""
@@ -97,7 +98,7 @@ class AnalyzerDownloadBridge(QObject):
                 self.parent_window,
                 "Select Feed File",
                 "",
-                "Feed Files (*.xml *.json *.xml.gz);;XML Files (*.xml *.xml.gz);;JSON Files (*.json);;All Files (*)"
+                "Feed Files (*.xml *.json *.xml.gz *.zip *.gz *.tgz);;XML Files (*.xml *.xml.gz);;JSON Files (*.json);;Archives (*.zip *.gz *.tgz);;All Files (*)"
             )
             return file_path or ""
         except Exception as e:

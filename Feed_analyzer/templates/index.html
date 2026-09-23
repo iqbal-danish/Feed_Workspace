@@ -59,12 +59,12 @@
                         <div class="mb-4" id="fileInputWrapper">
                             <label class="form-label text-secondary">Browse File</label>
                             <div class="input-group">
-                                <input class="form-control text-white" type="text" id="selectedFilePathDisplay" placeholder="Click Browse to select XML or JSON feed..." readonly style="background: rgba(0,0,0,0.3); border-color: var(--border-color); cursor: pointer;">
+                                <input class="form-control text-white" type="text" id="selectedFilePathDisplay" placeholder="Click Browse to select XML, JSON, GZ, or ZIP feed..." readonly style="background: rgba(0,0,0,0.3); border-color: var(--border-color); cursor: pointer;">
                                 <button class="btn btn-outline-primary px-3" type="button" id="browseFileBtn">
                                     <i class="bi bi-folder2-open me-1"></i> Browse
                                 </button>
                             </div>
-                            <input class="d-none" type="file" id="xml_file" name="xml_file" accept=".xml,.json">
+                            <input class="d-none" type="file" id="xml_file" name="xml_file" accept=".xml,.json,.gz,.zip,.tar.gz,.tgz">
                             <input type="hidden" id="local_file_path" name="local_file_path" value="">
                             <div class="form-text text-muted">Direct instant parsing for feeds of any size (100MB to 50GB+).</div>
                         </div>

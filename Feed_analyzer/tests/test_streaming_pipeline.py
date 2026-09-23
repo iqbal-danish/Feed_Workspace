@@ -158,5 +158,43 @@ class TestStreamingPipeline(unittest.TestCase):
         self.assertEqual(row[2], 'Acme')
         conn.close()
 
+    def test_handle_compressed_file(self):
+        from utils import handle_compressed_file
+        import gzip
+        import zipfile
+
+        # 1. Test GZIP XML
+        gz_path = os.path.join(self.test_dir.name, "feed.xml.gz")
+        xml_data = b'<?xml version="1.0"?><jobs><job><title>GZ Engineer</title></job></jobs>'
+        with gzip.open(gz_path, "wb") as gz:
+            gz.write(xml_data)
+
+        decomp_path, inner_name = handle_compressed_file(gz_path, "task_gz_1", self.test_dir.name)
+        self.assertEqual(inner_name, "feed.xml")
+        self.assertTrue(os.path.isfile(decomp_path))
+        with open(decomp_path, "rb") as f:
+            self.assertEqual(f.read(), xml_data)
+
+        # 2. Test ZIP JSON
+        zip_path = os.path.join(self.test_dir.name, "bundle.zip")
+        json_data = b'{"jobs": [{"title": "Zip Engineer"}]}'
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("readme.txt", "some info")
+            zf.writestr("data/jobs.json", json_data)
+
+        extracted_path, inner_name = handle_compressed_file(zip_path, "task_zip_1", self.test_dir.name)
+        self.assertEqual(inner_name, "jobs.json")
+        self.assertTrue(os.path.isfile(extracted_path))
+        with open(extracted_path, "rb") as f:
+            self.assertEqual(f.read(), json_data)
+
+        # 3. Test plain XML passthrough
+        plain_path = os.path.join(self.test_dir.name, "plain.xml")
+        with open(plain_path, "wb") as f:
+            f.write(xml_data)
+        out_path, inner_name = handle_compressed_file(plain_path, "task_plain_1", self.test_dir.name)
+        self.assertEqual(out_path, plain_path)
+        self.assertEqual(inner_name, "plain.xml")
+
 if __name__ == '__main__':
     unittest.main()
