@@ -174,12 +174,17 @@ def download_file_fast(
                 downloaded_bytes += len(buf)
                 elapsed = time.time() - start_time
                 speed = (downloaded_bytes / (1024 * 1024)) / elapsed if elapsed > 0 else 0
-                if total_size:
-                    pct = (downloaded_bytes / total_size) * 100
-                    sys.stdout.write(f"\rDownloading: {pct:.1f}% | {format_bytes(downloaded_bytes)}/{format_bytes(total_size)} | {speed:.1f} MB/s")
+                eta = ((total_size - downloaded_bytes) / (downloaded_bytes / elapsed)) if (total_size and total_size > downloaded_bytes and downloaded_bytes > 0 and elapsed > 0) else 0.0
+
+                if progress_callback:
+                    progress_callback(downloaded_bytes, total_size or 0, speed, eta)
                 else:
-                    sys.stdout.write(f"\rDownloaded: {format_bytes(downloaded_bytes)} | {speed:.1f} MB/s")
-                sys.stdout.flush()
+                    if total_size:
+                        pct = (downloaded_bytes / total_size) * 100
+                        sys.stdout.write(f"\rDownloading: {pct:.1f}% | {format_bytes(downloaded_bytes)}/{format_bytes(total_size)} | {speed:.1f} MB/s")
+                    else:
+                        sys.stdout.write(f"\rDownloaded: {format_bytes(downloaded_bytes)} | {speed:.1f} MB/s")
+                    sys.stdout.flush()
 
         elapsed = time.time() - start_time
         print(f"\nDownload Completed in {elapsed:.2f} seconds! Saved to: {abs_output_path}")

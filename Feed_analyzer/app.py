@@ -15,8 +15,13 @@ from utils import configure_logging, get_memory_usage_mb, format_size, ProgressE
 from parser import (
     stream_xml_records, stream_json_records,
     stream_xml_batches, stream_json_batches,
-    get_url_stream, detect_xml_job_element, detect_json_record_path
+    get_url_stream, detect_xml_job_element, detect_json_record_path,
+    PeekableStream
 )
+try:
+    from fast_downloader import download_file_fast
+except ImportError:
+    from Feed_analyzer.fast_downloader import download_file_fast
 from analyzer import FeedAnalyzerDb, get_analytics_connection, get_db_connection
 from filters import compile_filters
 from search import compile_search

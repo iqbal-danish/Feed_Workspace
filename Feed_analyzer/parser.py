@@ -1,4 +1,5 @@
 import os
+import io
 import urllib.request
 import urllib.error
 import json
@@ -53,6 +54,75 @@ class ProgressFileWrapper:
     def close(self) -> None:
         if hasattr(self.file_obj, 'close'):
             self.file_obj.close()
+
+
+class PeekableStream:
+    """Wraps a stream (such as a network response) with pre-read bytes prepended.
+    
+    Acts as a standard binary stream supporting read(), readline(), readinto(),
+    context management, iteration, and closes the underlying stream on exit/close.
+    """
+    def __init__(self, raw_stream: Any, peek_data: bytes = b""):
+        self.raw_stream = raw_stream
+        self._peek_io = io.BytesIO(peek_data) if peek_data else None
+
+    def read(self, size: int = -1) -> bytes:
+        if self._peek_io is not None:
+            if size is None or size < 0:
+                peek_rest = self._peek_io.read()
+                self._peek_io = None
+                return peek_rest + (self.raw_stream.read() if self.raw_stream else b"")
+            data = self._peek_io.read(size)
+            if len(data) < size:
+                self._peek_io = None
+                remaining = size - len(data)
+                more = self.raw_stream.read(remaining) if self.raw_stream else b""
+                return data + more
+            return data
+        return self.raw_stream.read(size) if self.raw_stream else b""
+
+    def readline(self, limit: int = -1) -> bytes:
+        if self._peek_io is not None:
+            line = self._peek_io.readline(limit)
+            if line.endswith(b"\n") or (limit > 0 and len(line) >= limit):
+                return line
+            self._peek_io = None
+            if self.raw_stream:
+                rem_limit = limit - len(line) if limit > 0 else -1
+                line += self.raw_stream.readline(rem_limit)
+            return line
+        return self.raw_stream.readline(limit) if self.raw_stream else b""
+
+    def readinto(self, b) -> int:
+        data = self.read(len(b))
+        n = len(data)
+        b[:n] = data
+        return n
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> bytes:
+        line = self.readline()
+        if not line:
+            raise StopIteration
+        return line
+
+    def close(self) -> None:
+        if self._peek_io:
+            self._peek_io.close()
+            self._peek_io = None
+        if self.raw_stream and hasattr(self.raw_stream, 'close'):
+            self.raw_stream.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.raw_stream, name)
 
 def get_url_stream(url: str, timeout: int = 30) -> Tuple[Any, int]:
     """Downloads a URL as a stream and returns the stream and content length."""
