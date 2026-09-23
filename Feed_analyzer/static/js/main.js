@@ -41,8 +41,6 @@ function ensureDownloadExtension(fileName, defaultName) {
 
 function downloadWithName(url, options, defaultName, successMessage, failureMessage) {
     const normalizedName = ensureDownloadExtension(defaultName, defaultName);
-    showToast("Download Started", `Preparing ${normalizedName}...`);
-    const reportsPathHint = `Feed_analyzer/reports/${normalizedName}`;
 
     if (pyBridge && typeof pyBridge.download_file === "function") {
         const absoluteUrl = new URL(url, window.location.origin).toString();
@@ -50,16 +48,20 @@ function downloadWithName(url, options, defaultName, successMessage, failureMess
         const payloadJson = options && options.body ? options.body : "";
         pyBridge.download_file(absoluteUrl, normalizedName, method, payloadJson, (requestId) => {
             if (requestId) {
+                showToast("Export Started", `Preparing and saving ${normalizedName}...`);
                 nativeDownloadMessages[requestId] = {
-                    successMessage: successMessage || `Saved to ${reportsPathHint}`,
+                    successMessage: successMessage || "File saved successfully!",
                     failureMessage: failureMessage || "Failed to download file."
                 };
             } else {
-                showToast("Download Cancelled", "No file was downloaded.", "error");
+                showToast("Export Cancelled", "No file was saved.", "info");
             }
         });
         return;
     }
+
+    showToast("Download Started", `Preparing ${normalizedName}...`);
+    const reportsPathHint = `Feed_analyzer/reports/${normalizedName}`;
 
     fetch(url, options)
         .then(res => {
@@ -88,7 +90,8 @@ function initQtBridge() {
                 const entry = nativeDownloadMessages[requestId] || {};
                 delete nativeDownloadMessages[requestId];
                 if (success) {
-                    showToast("Download Complete", entry.successMessage || "File downloaded successfully!");
+                    const savedMsg = detail ? `Saved to: ${detail}` : (entry.successMessage || "File downloaded successfully!");
+                    showToast("Download Complete", savedMsg);
                 } else {
                     showToast("Export Failed", entry.failureMessage || "Failed to download file.", "error");
                     if (detail) {

@@ -122,6 +122,55 @@ impl FastDeduplicator {
     }
 }
 
+/// Prompts the user with a native Windows OS "Save As" file dialog (outside of Qt / WebEngine)
+#[pyfunction]
+#[pyo3(signature = (default_name = "export.csv", title = "Save As", extension_filters = vec![]))]
+fn save_file_dialog_rs(
+    py: Python<'_>,
+    default_name: &str,
+    title: &str,
+    extension_filters: Vec<(String, Vec<String>)>,
+) -> PyResult<String> {
+    py.allow_threads(|| {
+        let mut dialog = rfd::FileDialog::new()
+            .set_title(title)
+            .set_file_name(default_name);
+
+        for (desc, exts) in &extension_filters {
+            let ext_slices: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
+            dialog = dialog.add_filter(desc, &ext_slices);
+        }
+
+        match dialog.save_file() {
+            Some(path) => Ok(path.to_string_lossy().to_string()),
+            None => Ok(String::new()),
+        }
+    })
+}
+
+/// Prompts the user with a native Windows OS "Open File" dialog
+#[pyfunction]
+#[pyo3(signature = (title = "Select File", extension_filters = vec![]))]
+fn select_file_dialog_rs(
+    py: Python<'_>,
+    title: &str,
+    extension_filters: Vec<(String, Vec<String>)>,
+) -> PyResult<String> {
+    py.allow_threads(|| {
+        let mut dialog = rfd::FileDialog::new().set_title(title);
+
+        for (desc, exts) in &extension_filters {
+            let ext_slices: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
+            dialog = dialog.add_filter(desc, &ext_slices);
+        }
+
+        match dialog.pick_file() {
+            Some(path) => Ok(path.to_string_lossy().to_string()),
+            None => Ok(String::new()),
+        }
+    })
+}
+
 /// A Python module implemented in Rust.
 #[pymodule]
 fn feed_core_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -129,6 +178,8 @@ fn feed_core_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(detect_json_record_path_rs, m)?)?;
     m.add_function(wrap_pyfunction!(validate_xml_file_rs, m)?)?;
     m.add_function(wrap_pyfunction!(compute_record_hash_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(save_file_dialog_rs, m)?)?;
+    m.add_function(wrap_pyfunction!(select_file_dialog_rs, m)?)?;
     m.add_class::<XmlRecordStreamer>()?;
     m.add_class::<FastDeduplicator>()?;
     Ok(())

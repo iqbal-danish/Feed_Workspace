@@ -41,6 +41,14 @@ except ImportError as e:
     logger.error(f"Failed to import Feed Validator MainWindow: {e}")
     ValidatorWindow = None
 
+try:
+    import feed_core_rs
+    HAS_RUST_CORE = True
+    logger.info("Successfully imported feed_core_rs.")
+except ImportError:
+    feed_core_rs = None
+    HAS_RUST_CORE = False
+
 
 def get_python_exe(app_dir):
     """Detect and return the virtual environment python or fall back to system python."""
@@ -76,6 +84,15 @@ class AnalyzerDownloadBridge(QObject):
     def select_file_dialog(self) -> str:
         """Opens a native desktop file dialog to pick an XML or JSON feed directly without HTTP upload."""
         try:
+            if HAS_RUST_CORE and hasattr(feed_core_rs, "select_file_dialog_rs"):
+                filters = [
+                    ("Feed Files", ["xml", "json", "gz"]),
+                    ("XML Files", ["xml", "gz"]),
+                    ("JSON Files", ["json"]),
+                    ("All Files", ["*"])
+                ]
+                return feed_core_rs.select_file_dialog_rs("Select Feed File", filters) or ""
+
             file_path, _ = QFileDialog.getOpenFileName(
                 self.parent_window,
                 "Select Feed File",
@@ -92,8 +109,42 @@ class AnalyzerDownloadBridge(QObject):
         try:
             suggested_name = suggested_name or "export.csv"
             ext = os.path.splitext(suggested_name)[1].lower()
-            os.makedirs(self.default_reports_dir, exist_ok=True)
-            save_path = os.path.join(self.default_reports_dir, suggested_name)
+
+            filters = []
+            if ext == ".csv":
+                filters = [("CSV Files", ["csv"]), ("All Files", ["*"])]
+            elif ext in (".xlsx", ".xls"):
+                filters = [("Excel Files", ["xlsx"]), ("All Files", ["*"])]
+            elif ext == ".json":
+                filters = [("JSON Files", ["json"]), ("All Files", ["*"])]
+            elif ext == ".html":
+                filters = [("HTML Files", ["html"]), ("All Files", ["*"])]
+            else:
+                filters = [("All Files", ["*"])]
+
+            save_path = ""
+            if HAS_RUST_CORE and hasattr(feed_core_rs, "save_file_dialog_rs"):
+                save_path = feed_core_rs.save_file_dialog_rs(suggested_name, "Save Exported File", filters)
+            else:
+                filter_str = "All Files (*)"
+                if ext == '.csv':
+                    filter_str = "CSV Files (*.csv);;All Files (*)"
+                elif ext in ('.xlsx', '.xls'):
+                    filter_str = "Excel Files (*.xlsx);;All Files (*)"
+                elif ext == '.html':
+                    filter_str = "HTML Files (*.html);;All Files (*)"
+                save_path, _ = QFileDialog.getSaveFileName(
+                    self.parent_window,
+                    "Save Exported File",
+                    suggested_name,
+                    filter_str
+                )
+
+            # User cancelled dialog
+            if not save_path:
+                logger.info("Download cancelled by user in Save As dialog.")
+                return ""
+
             if ext and not save_path.lower().endswith(ext):
                 save_path = f"{save_path}{ext}"
 
@@ -3206,20 +3257,33 @@ class FeedWorkspace(QMainWindow):
             initial_path = os.path.join(suggested_dir, suggested_name) if suggested_dir else suggested_name
             
             ext = os.path.splitext(suggested_name)[1].lower() if suggested_name else ""
-            filter_str = "All Files (*)"
+            filters = []
             if ext == '.csv':
-                filter_str = "CSV Files (*.csv);;All Files (*)"
+                filters = [("CSV Files", ["csv"]), ("All Files", ["*"])]
             elif ext in ('.xlsx', '.xls'):
-                filter_str = "Excel Files (*.xlsx);;All Files (*)"
+                filters = [("Excel Files", ["xlsx"]), ("All Files", ["*"])]
             elif ext == '.html':
-                filter_str = "HTML Files (*.html);;All Files (*)"
-                
-            save_path, _ = QFileDialog.getSaveFileName(
-                self,
-                "Save Exported File",
-                initial_path,
-                filter_str
-            )
+                filters = [("HTML Files", ["html"]), ("All Files", ["*"])]
+            else:
+                filters = [("All Files", ["*"])]
+
+            save_path = ""
+            if HAS_RUST_CORE and hasattr(feed_core_rs, "save_file_dialog_rs"):
+                save_path = feed_core_rs.save_file_dialog_rs(suggested_name, "Save Exported File", filters)
+            else:
+                filter_str = "All Files (*)"
+                if ext == '.csv':
+                    filter_str = "CSV Files (*.csv);;All Files (*)"
+                elif ext in ('.xlsx', '.xls'):
+                    filter_str = "Excel Files (*.xlsx);;All Files (*)"
+                elif ext == '.html':
+                    filter_str = "HTML Files (*.html);;All Files (*)"
+                save_path, _ = QFileDialog.getSaveFileName(
+                    self,
+                    "Save Exported File",
+                    initial_path,
+                    filter_str
+                )
             
             if save_path:
                 download_item.setDownloadDirectory(os.path.dirname(save_path))
