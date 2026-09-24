@@ -8,6 +8,7 @@ import json
 import threading
 import urllib.request
 import uuid
+import ctypes
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl, QTimer, QSize, QDateTime, QPoint, QPointF, QRectF, QEvent, QObject, Slot, Signal
@@ -2773,6 +2774,45 @@ class FeedWorkspace(QMainWindow):
         super().__init__()
         self.setWindowTitle("Feed Workspace Dashboard")
         self.setMinimumSize(1350, 860)
+        self._apply_dark_titlebar()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._apply_dark_titlebar()
+
+    def _apply_dark_titlebar(self):
+        """Enable Windows 10/11 immersive dark mode and caption styling on the native window title bar."""
+        if sys.platform != "win32":
+            return
+        try:
+            hwnd = int(self.winId())
+            # 1. DWMWA_USE_IMMERSIVE_DARK_MODE (20 for Win10 20H1+ & Win11; 19 for older Win10)
+            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 = 19
+            val = ctypes.c_int(1)
+            res = ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ctypes.byref(val), ctypes.sizeof(val)
+            )
+            if res != 0:
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1, ctypes.byref(val), ctypes.sizeof(val)
+                )
+
+            # 2. DWMWA_CAPTION_COLOR = 35 (Win11: match topbar #09090b -> BGR 0x000b0909)
+            DWMWA_CAPTION_COLOR = 35
+            caption_color = ctypes.c_int(0x000b0909)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, DWMWA_CAPTION_COLOR, ctypes.byref(caption_color), ctypes.sizeof(caption_color)
+            )
+
+            # 3. DWMWA_TEXT_COLOR = 36 (Win11: crisp white text #ffffff -> 0x00ffffff)
+            DWMWA_TEXT_COLOR = 36
+            text_color = ctypes.c_int(0x00ffffff)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, DWMWA_TEXT_COLOR, ctypes.byref(text_color), ctypes.sizeof(text_color)
+            )
+        except Exception as e:
+            logger.debug(f"Could not apply immersive dark title bar: {e}")
 
         self.subprocesses = []
         self.app_containers = {}
