@@ -311,9 +311,15 @@ def run_parsing_task(
                 "speed": round(estimator.speed_records_per_sec, 1)
             })
 
-        # Pre-cache top field statistics asynchronously in background thread
+        # Pre-cache top field statistics and global duplicate metrics asynchronously in background thread
         def _bg_precache():
             try:
+                # Pre-calculate global duplicate statistics and persist to feed_info
+                global_stats = get_global_statistics(db_path, db.field_mappings)
+                db.save_metadata({
+                    "duplicate_id_count": str(global_stats.get("duplicate_id_count", 0)),
+                    "duplicate_id_field": str(global_stats.get("duplicate_id_field", "None"))
+                })
                 precache_field_stats(db_path, db.field_mappings)
             except Exception as e_cache:
                 logger.warning(f"Field stats pre-caching warning: {e_cache}")
@@ -440,17 +446,36 @@ def get_progress_api(task_id):
 
 @app.route('/dashboard/<task_id>')
 def dashboard(task_id):
-    """Renders the analytical dashboard for a specific feed."""
+    """Renders the analytical dashboard for a specific feed instantly without blocking on heavy queries."""
     db_path = os.path.join(config.DB_FOLDER, f"{task_id}.db")
     if not os.path.exists(db_path):
         return redirect(url_for('index'))
         
     db = FeedAnalyzerDb(db_path)
     metadata = db.get_metadata()
-    global_stats = get_global_statistics(db_path, db.field_mappings)
     
-    # Merge metadata and global stats
-    metadata.update(global_stats)
+    # Ensure baseline metadata fields exist
+    if "total_fields" not in metadata:
+        metadata["total_fields"] = str(len(db.field_mappings))
+    if "total_jobs" not in metadata:
+        metadata["total_jobs"] = "0"
+        
+    # If duplicate metrics are missing from cache, trigger background computation without stalling page load
+    if "duplicate_id_count" not in metadata:
+        metadata["duplicate_id_count"] = "0"
+        metadata["duplicate_id_field"] = "None"
+        
+        def _bg_calc_dups():
+            try:
+                stats = get_global_statistics(db_path, db.field_mappings)
+                db.save_metadata({
+                    "duplicate_id_count": str(stats.get("duplicate_id_count", 0)),
+                    "duplicate_id_field": str(stats.get("duplicate_id_field", "None"))
+                })
+            except Exception as e:
+                logger.warning(f"Background duplicate calculation error: {e}")
+                
+        threading.Thread(target=_bg_calc_dups, daemon=True).start()
     
     return render_template(
         'dashboard.html',
@@ -458,6 +483,33 @@ def dashboard(task_id):
         metadata=metadata,
         schema_tree=db.get_schema_tree()
     )
+
+@app.route('/api/duplicate_summary/<task_id>')
+def duplicate_summary(task_id):
+    """Returns duplicate ID stats if available, or calculates them asynchronously."""
+    db_path = os.path.join(config.DB_FOLDER, f"{task_id}.db")
+    if not os.path.exists(db_path):
+        return jsonify({"error": "Database not found"}), 404
+        
+    db = FeedAnalyzerDb(db_path)
+    metadata = db.get_metadata()
+    
+    if "duplicate_id_count" in metadata and "duplicate_id_field" in metadata:
+        return jsonify({
+            "duplicate_id_count": int(metadata.get("duplicate_id_count", 0)),
+            "duplicate_id_field": metadata.get("duplicate_id_field", "None")
+        })
+        
+    # Compute and persist
+    stats = get_global_statistics(db_path, db.field_mappings)
+    db.save_metadata({
+        "duplicate_id_count": str(stats.get("duplicate_id_count", 0)),
+        "duplicate_id_field": str(stats.get("duplicate_id_field", "None"))
+    })
+    return jsonify({
+        "duplicate_id_count": stats.get("duplicate_id_count", 0),
+        "duplicate_id_field": stats.get("duplicate_id_field", "None")
+    })
 
 @app.route('/api/field_stats/<task_id>')
 def field_stats(task_id):

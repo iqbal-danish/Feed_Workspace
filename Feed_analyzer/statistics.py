@@ -164,8 +164,7 @@ def get_multi_group_by(
     return results
 
 def get_global_statistics(db_path: str, field_mappings: Dict[str, str]) -> Dict[str, Any]:
-    """Retrieves high-level summary metrics for the feed."""
-    conn = get_analytics_connection(db_path)
+    """Retrieves high-level summary metrics for the feed with optimized duplicate scanning."""
     summary = {
         "total_jobs": 0,
         "total_fields": len(field_mappings),
@@ -173,31 +172,29 @@ def get_global_statistics(db_path: str, field_mappings: Dict[str, str]) -> Dict[
         "duplicate_id_field": "None"
     }
     
+    # Try to find an ID field (e.g. "JobID", "id", "job_id", "guid", "url", "applyurl")
+    id_field = None
+    for path in field_mappings.keys():
+        path_lower = path.lower()
+        if path_lower in ("jobid", "id", "job_id", "guid", "url", "applyurl"):
+            id_field = path
+            break
+
+    conn = get_analytics_connection(db_path)
     try:
         row = conn.execute("SELECT COUNT(*) as cnt FROM records").fetchone()
         summary["total_jobs"] = row["cnt"] if row else 0
         
-        # Try to find an ID field (e.g. "JobID", "id", "job_id") to count duplicates
-        id_field = None
-        for path in field_mappings.keys():
-            path_lower = path.lower()
-            if path_lower in ("jobid", "id", "job_id", "guid", "url", "applyurl"):
-                id_field = path
-                break
-                
         if id_field:
             col_name = field_mappings[id_field]
+            # Fast vectorized COUNT - COUNT(DISTINCT) calculation
             dup_query = f"""
-                SELECT SUM(dup_cnt) as total_dups FROM (
-                    SELECT COUNT(*) - 1 as dup_cnt
-                    FROM records
-                    WHERE {col_name} IS NOT NULL AND {col_name} != ''
-                    GROUP BY {col_name}
-                    HAVING COUNT(*) > 1
-                )
+                SELECT COUNT({col_name}) - COUNT(DISTINCT {col_name}) as dups
+                FROM records
+                WHERE {col_name} IS NOT NULL AND {col_name} != ''
             """
             dup_row = conn.execute(dup_query).fetchone()
-            summary["duplicate_id_count"] = dup_row["total_dups"] if dup_row and dup_row["total_dups"] else 0
+            summary["duplicate_id_count"] = dup_row["dups"] if dup_row and dup_row["dups"] else 0
             summary["duplicate_id_field"] = id_field
 
     except Exception as e:
