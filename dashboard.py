@@ -698,47 +698,47 @@ class QuickActionCard(QFrame):
 
         self.setObjectName("quick_card")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setMinimumHeight(150)
-        self.setMinimumWidth(210)
+        self.setMinimumHeight(200)
+        self.setMinimumWidth(260)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 18)
-        layout.setSpacing(12)
+        layout.setContentsMargins(26, 24, 26, 20)
+        layout.setSpacing(14)
 
         # Top section: Horizontal Icon + Title & Description
         top_row = QHBoxLayout()
-        top_row.setSpacing(16)
+        top_row.setSpacing(18)
         top_row.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         # Icon Circle
         self.icon_box = QFrame(self)
-        self.icon_box.setFixedSize(50, 50)
+        self.icon_box.setFixedSize(58, 58)
         self.icon_box.setStyleSheet(f"""
             QFrame {{
                 background-color: rgba({self.cfg['color_rgb']}, 0.12);
                 border: 1px solid rgba({self.cfg['color_rgb']}, 0.30);
-                border-radius: 25px;
+                border-radius: 29px;
             }}
         """)
         box_lay = QVBoxLayout(self.icon_box)
         box_lay.setContentsMargins(0, 0, 0, 0)
         icon_lbl = QLabel(self.cfg["icon"], self.icon_box)
-        icon_lbl.setStyleSheet(f"font-size: 22px; color: {self.cfg['color']}; background: transparent; border: none;")
+        icon_lbl.setStyleSheet(f"font-size: 26px; color: {self.cfg['color']}; background: transparent; border: none;")
         icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         box_lay.addWidget(icon_lbl)
         top_row.addWidget(self.icon_box)
 
         # Text block
         text_block = QVBoxLayout()
-        text_block.setSpacing(4)
+        text_block.setSpacing(6)
         self.title_lbl = QLabel(title, self)
-        self.title_lbl.setStyleSheet("font-size: 19px; font-weight: bold; color: #ffffff; font-family: 'Segoe UI', Arial; background: transparent; border: none;")
+        self.title_lbl.setStyleSheet("font-size: 21px; font-weight: bold; color: #ffffff; font-family: 'Segoe UI', Arial; background: transparent; border: none;")
         text_block.addWidget(self.title_lbl)
 
         self.desc_lbl = QLabel(description, self)
         self.desc_lbl.setWordWrap(True)
-        self.desc_lbl.setStyleSheet("color: #94a3b8; font-size: 12px; line-height: 17px; font-family: 'Segoe UI', Arial; background: transparent; border: none;")
+        self.desc_lbl.setStyleSheet("color: #94a3b8; font-size: 13px; line-height: 19px; font-family: 'Segoe UI', Arial; background: transparent; border: none;")
         text_block.addWidget(self.desc_lbl)
         top_row.addLayout(text_block, 1)
 
@@ -751,17 +751,17 @@ class QuickActionCard(QFrame):
 
         self.launch_btn = QPushButton("Launch Tool  →", self)
         self.launch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.launch_btn.setFixedHeight(30)
+        self.launch_btn.setFixedHeight(34)
         self.launch_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: rgba(255, 255, 255, 0.04);
                 border: 1px solid rgba(255, 255, 255, 0.14);
-                border-radius: 7px;
+                border-radius: 8px;
                 color: #cbd5e1;
-                font-size: 11px;
+                font-size: 12px;
                 font-weight: 600;
                 font-family: 'Segoe UI', Arial;
-                padding: 0 12px;
+                padding: 0 16px;
             }}
             QPushButton:hover {{
                 background-color: rgba({self.cfg['color_rgb']}, 0.22);
@@ -790,7 +790,7 @@ class QuickActionCard(QFrame):
             QFrame {{
                 background-color: rgba({self.cfg['color_rgb']}, 0.22);
                 border: 1px solid {self.cfg['color']};
-                border-radius: 25px;
+                border-radius: 29px;
             }}
         """)
         super().enterEvent(event)
@@ -800,7 +800,7 @@ class QuickActionCard(QFrame):
             QFrame {{
                 background-color: rgba({self.cfg['color_rgb']}, 0.12);
                 border: 1px solid rgba({self.cfg['color_rgb']}, 0.30);
-                border-radius: 25px;
+                border-radius: 29px;
             }}
         """)
         super().leaveEvent(event)
@@ -3131,21 +3131,23 @@ class FeedWorkspace(QMainWindow):
         # Search field (centered)
         self._search = QLineEdit(bar)
         self._search.setPlaceholderText(" 🔍   Search anything... (Ctrl+K)")
-        self._search.setFixedWidth(280)
+        self._search.setFixedWidth(360)
         self._search.setObjectName("search_field")
         self._search.installEventFilter(self)
         bl.addWidget(self._search)
 
+        bl.addStretch()
+
         # Reset Active Tool Button (hidden on Home page)
         self.topbar_reset_btn = QPushButton("🧹  Reset Tool", bar)
         self.topbar_reset_btn.setObjectName("topbar_reset_btn")
-        self.topbar_reset_btn.setFixedSize(110, 36)
+        self.topbar_reset_btn.setFixedSize(110, 34)
         self.topbar_reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.topbar_reset_btn.clicked.connect(self.reset_active_tab)
         self.topbar_reset_btn.setVisible(False)
         bl.addWidget(self.topbar_reset_btn)
 
-        # Clear Cache Button (Clean ghost button matching mockup)
+        # Clear Cache Button (Clean ghost button matching mockup on far right)
         self.topbar_purge_btn = QPushButton("Clear Cache", bar)
         self.topbar_purge_btn.setObjectName("topbar_clear_cache_btn")
         self.topbar_purge_btn.setFixedSize(105, 34)
@@ -3169,44 +3171,6 @@ class FeedWorkspace(QMainWindow):
         """)
         self.topbar_purge_btn.clicked.connect(self.purge_all_cache)
         bl.addWidget(self.topbar_purge_btn)
-
-        bl.addStretch()
-
-        # Bell with notification badge
-        bell_frame = QFrame(bar)
-        bell_frame.setFixedSize(36, 36)
-        bell_frame.setStyleSheet("background: transparent; border: none;")
-        bell_btn = QPushButton("🔔", bell_frame)
-        bell_btn.setObjectName("icon_btn")
-        bell_btn.setFixedSize(36, 36)
-        bell_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        
-        self._notif_badge = QLabel(bell_frame)
-        self._notif_badge.setObjectName("notif_badge")
-        self._notif_badge.setFixedSize(6, 6)
-        self._notif_badge.move(24, 6)
-        self._notif_badge.setStyleSheet("background-color: #ef4444; border-radius: 3px; border: none;")
-        
-        bl.addWidget(bell_frame)
-
-        # Moon icon / Switch
-        moon_btn = QPushButton("🌙", bar)
-        moon_btn.setObjectName("icon_btn")
-        moon_btn.setFixedSize(36, 36)
-        moon_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        bl.addWidget(moon_btn)
-
-        # User info
-        user_col = QVBoxLayout()
-        user_col.setSpacing(1)
-        hello_lbl = QLabel("Danish Iqbal", bar)
-        hello_lbl.setStyleSheet("color: #ffffff; font-size: 15px; font-weight: bold; font-family: 'Segoe UI'; background: transparent; border: none;")
-        user_col.addWidget(hello_lbl)
-        
-        role_lbl = QLabel("Engineer", bar)
-        role_lbl.setStyleSheet("color: #64748b; font-size: 10px; font-family: 'Segoe UI'; background: transparent; border: none;")
-        user_col.addWidget(role_lbl)
-        bl.addLayout(user_col)
 
         # Keep hidden clock label so timer updates don't crash
         self._clock_label = QLabel(bar)
@@ -3401,8 +3365,13 @@ class FeedWorkspace(QMainWindow):
             card = QuickActionCard(title, desc, idx, self, home)
             grid_lay.addWidget(card, row, col)
 
-        hl.addLayout(grid_lay)
-        hl.addStretch()
+        # Distribute row & column stretch equally so cards fill window space symmetrically
+        for col_idx in range(3):
+            grid_lay.setColumnStretch(col_idx, 1)
+        for row_idx in range(3):
+            grid_lay.setRowStretch(row_idx, 1)
+
+        hl.addLayout(grid_lay, 1)
 
         scroll.setWidget(home)
         return scroll
