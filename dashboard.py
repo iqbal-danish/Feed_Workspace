@@ -2774,45 +2774,7 @@ class FeedWorkspace(QMainWindow):
         super().__init__()
         self.setWindowTitle("Feed Workspace Dashboard")
         self.setMinimumSize(1350, 860)
-        self._apply_dark_titlebar()
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        self._apply_dark_titlebar()
-
-    def _apply_dark_titlebar(self):
-        """Enable Windows 10/11 immersive dark mode and caption styling on the native window title bar."""
-        if sys.platform != "win32":
-            return
-        try:
-            hwnd = int(self.winId())
-            # 1. DWMWA_USE_IMMERSIVE_DARK_MODE (20 for Win10 20H1+ & Win11; 19 for older Win10)
-            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
-            DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 = 19
-            val = ctypes.c_int(1)
-            res = ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ctypes.byref(val), ctypes.sizeof(val)
-            )
-            if res != 0:
-                ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                    hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1, ctypes.byref(val), ctypes.sizeof(val)
-                )
-
-            # 2. DWMWA_CAPTION_COLOR = 35 (Win11: match topbar #09090b -> BGR 0x000b0909)
-            DWMWA_CAPTION_COLOR = 35
-            caption_color = ctypes.c_int(0x000b0909)
-            ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                hwnd, DWMWA_CAPTION_COLOR, ctypes.byref(caption_color), ctypes.sizeof(caption_color)
-            )
-
-            # 3. DWMWA_TEXT_COLOR = 36 (Win11: crisp white text #ffffff -> 0x00ffffff)
-            DWMWA_TEXT_COLOR = 36
-            text_color = ctypes.c_int(0x00ffffff)
-            ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                hwnd, DWMWA_TEXT_COLOR, ctypes.byref(text_color), ctypes.sizeof(text_color)
-            )
-        except Exception as e:
-            logger.debug(f"Could not apply immersive dark title bar: {e}")
+        self.setWindowState(Qt.WindowState.WindowMaximized)
 
         self.subprocesses = []
         self.app_containers = {}
@@ -2853,6 +2815,44 @@ class FeedWorkspace(QMainWindow):
         
         # Initial refresh
         QTimer.singleShot(100, self.refresh_stats)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._apply_dark_titlebar()
+
+    def _apply_dark_titlebar(self):
+        """Enable Windows 10/11 immersive dark mode and caption styling on the native window title bar."""
+        if sys.platform != "win32":
+            return
+        try:
+            hwnd = int(self.winId())
+            # 1. DWMWA_USE_IMMERSIVE_DARK_MODE (20 for Win10 20H1+ & Win11; 19 for older Win10)
+            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 = 19
+            val = ctypes.c_int(1)
+            res = ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ctypes.byref(val), ctypes.sizeof(val)
+            )
+            if res != 0:
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1, ctypes.byref(val), ctypes.sizeof(val)
+                )
+
+            # 2. DWMWA_CAPTION_COLOR = 35 (Win11: match topbar #09090b -> BGR 0x000b0909)
+            DWMWA_CAPTION_COLOR = 35
+            caption_color = ctypes.c_int(0x000b0909)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, DWMWA_CAPTION_COLOR, ctypes.byref(caption_color), ctypes.sizeof(caption_color)
+            )
+
+            # 3. DWMWA_TEXT_COLOR = 36 (Win11: crisp white text #ffffff -> 0x00ffffff)
+            DWMWA_TEXT_COLOR = 36
+            text_color = ctypes.c_int(0x00ffffff)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, DWMWA_TEXT_COLOR, ctypes.byref(text_color), ctypes.sizeof(text_color)
+            )
+        except Exception as e:
+            logger.debug(f"Could not apply immersive dark title bar: {e}")
 
     def refresh_stats(self):
         """Update dashboard statistics dynamically in real-time."""
@@ -2967,7 +2967,7 @@ class FeedWorkspace(QMainWindow):
     def _build_sidebar(self):
         sidebar = QFrame(self)
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(230)
+        sidebar.setFixedWidth(255)
 
         sl = QVBoxLayout(sidebar)
         sl.setContentsMargins(16, 24, 16, 20)
@@ -3024,8 +3024,8 @@ class FeedWorkspace(QMainWindow):
 
         # Bottom section: profile avatar & exit/shutdown settings gear
         bottom_row = QHBoxLayout()
-        bottom_row.setContentsMargins(8, 0, 8, 0)
-        bottom_row.setSpacing(12)
+        bottom_row.setContentsMargins(4, 0, 4, 0)
+        bottom_row.setSpacing(10)
 
         self.avatar_widget = ProfileAvatarWidget(sidebar)
         bottom_row.addWidget(self.avatar_widget)
@@ -3033,14 +3033,13 @@ class FeedWorkspace(QMainWindow):
         user_info = QVBoxLayout()
         user_info.setSpacing(1)
         user_name = QLabel("Danish Iqbal", sidebar)
-        user_name.setStyleSheet("color: #cbd5e1; font-size: 15px; font-weight: bold; font-family: 'Segoe UI'; background: transparent; border: none;")
+        user_name.setStyleSheet("color: #cbd5e1; font-size: 14px; font-weight: bold; font-family: 'Segoe UI'; background: transparent; border: none;")
+        user_name.setWordWrap(False)
         user_role = QLabel("Engineer", sidebar)
         user_role.setStyleSheet("color: #64748b; font-size: 11px; font-family: 'Segoe UI'; background: transparent; border: none;")
         user_info.addWidget(user_name)
         user_info.addWidget(user_role)
-        bottom_row.addLayout(user_info)
-        
-        bottom_row.addStretch()
+        bottom_row.addLayout(user_info, 1)
 
         settings_btn = ExitButton(sidebar)
         settings_btn.setObjectName("shutdown_btn_sidebar")
@@ -3953,5 +3952,5 @@ if __name__ == "__main__":
     font.setStyleHint(QFont.StyleHint.SansSerif)
     app.setFont(font)
     workspace = FeedWorkspace()
-    workspace.show()
+    workspace.showMaximized()
     sys.exit(app.exec())
