@@ -3005,8 +3005,6 @@ class FeedWorkspace(QMainWindow):
             ("Validator", "Validator", 3),
             ("Builder",   "Builder",   4),
             ("Converter", "Converter", 5),
-            ("Diff",      "Diff",      6),
-            ("Downloader",  "Downloader",  7),
         ]
 
         sl.setSpacing(0) # Disable default layout spacing to control spacing explicitly
