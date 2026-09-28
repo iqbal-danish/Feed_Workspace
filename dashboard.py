@@ -3395,8 +3395,6 @@ class FeedWorkspace(QMainWindow):
             ("Validator",  "Run rule compliance and semantic integrity validation", 3),
             ("Builder",    "Compose, edit, and generate feeds from scratch", 4),
             ("Converter",  "Convert feed schemas across JSON, XML, and CSV", 5),
-            ("Diff",       "Compare two feeds and map the schema differences", 6),
-            ("Downloader", "Download massive feeds at maximum speed with parallel HTTP streams", 7),
         ]
 
         for i, (title, desc, idx) in enumerate(actions):
@@ -3406,9 +3404,10 @@ class FeedWorkspace(QMainWindow):
             grid_lay.addWidget(card, row, col)
 
         # Distribute row & column stretch equally so cards fill window space symmetrically
+        row_count = (len(actions) + 2) // 3
         for col_idx in range(3):
             grid_lay.setColumnStretch(col_idx, 1)
-        for row_idx in range(3):
+        for row_idx in range(row_count):
             grid_lay.setRowStretch(row_idx, 1)
 
         hl.addLayout(grid_lay, 1)
