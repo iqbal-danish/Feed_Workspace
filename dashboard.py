@@ -1348,57 +1348,6 @@ class FeedConverterTab(QWidget):
 
         lay.addLayout(pills_row)
 
-        # Ingestion Mode Preset Callout Box
-        preset_box = QFrame(card)
-        preset_box.setStyleSheet("""
-            QFrame {
-                background-color: rgba(245, 158, 11, 0.03);
-                border: 1px solid rgba(245, 158, 11, 0.22);
-                border-radius: 12px;
-                padding: 12px;
-            }
-        """)
-        pb_lay = QVBoxLayout(preset_box)
-        pb_lay.setContentsMargins(12, 10, 12, 12)
-        pb_lay.setSpacing(8)
-
-        pb_title = QLabel("⚡ Ingestion Mode Preset", preset_box)
-        pb_title.setStyleSheet("color: #fbbf24; font-size: 12px; font-weight: 600; font-family: 'Space Grotesk', 'Segoe UI';")
-        pb_lay.addWidget(pb_title)
-
-        self.preset_combo = QComboBox(preset_box)
-        self.preset_combo.addItems([
-            "🚀 Extreme Fast Mode (~15,000+ rec/s - 2 Spaces, Flat Schema)",
-            "🛡️ Schema-Strict Validation Mode (Type Integrity & Delimiters)",
-            "📦 Stream Compact Mode (No Indent, Max Compression)",
-            "⚙️ Custom Parameters (Indentation & Delimiters)"
-        ])
-        self.preset_combo.setFixedHeight(38)
-        self.preset_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #080c14;
-                color: #f8fafc;
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 8px;
-                padding: 0 10px;
-                font-size: 12px;
-                font-family: 'Outfit', 'Segoe UI';
-            }
-            QComboBox::drop-down { border: none; width: 24px; }
-            QComboBox QAbstractItemView {
-                background-color: #080c14;
-                color: #f8fafc;
-                selection-background-color: rgba(99, 102, 241, 0.3);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-            }
-        """)
-        pb_lay.addWidget(self.preset_combo)
-
-        pb_sub = QLabel("Optimized SIMD in-memory transformer with zero disk buffering.", preset_box)
-        pb_sub.setStyleSheet("color: #94a3b8; font-size: 11px; font-family: 'Outfit', 'Segoe UI';")
-        pb_lay.addWidget(pb_sub)
-
-        lay.addWidget(preset_box)
 
         # Pipeline Transform Flags
         flags_lbl = QLabel("PIPELINE TRANSFORM FLAGS", card)
