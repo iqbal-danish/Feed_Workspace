@@ -14,6 +14,7 @@ import html
 import re
 import io
 import csv
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl, QTimer, QSize, QDateTime, QPoint, QPointF, QRectF, QEvent, QObject, Slot, Signal
@@ -915,231 +916,9 @@ class DragDropLabel(QFrame):
 
 # ── Feed Converter Tab ────────────────────────────────────────────────────────
 
-class ConverterDropZone(QFrame):
-    """Clean dashed drag-and-drop zone matching Stitch mockup."""
-    file_selected = Signal(str)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("converter_dropzone")
-        self.setAcceptDrops(True)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setMinimumHeight(130)
-
-        lay = QVBoxLayout(self)
-        lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lay.setSpacing(6)
-        lay.setContentsMargins(16, 20, 16, 20)
-
-        # Upload Cloud Icon Badge
-        self.icon_badge = QLabel("☁", self)
-        self.icon_badge.setFixedSize(40, 40)
-        self.icon_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.icon_badge.setStyleSheet("""
-            QLabel {
-                background-color: #122131;
-                border: 1px solid #1c2b3c;
-                border-radius: 20px;
-                color: #38bdf8;
-                font-size: 20px;
-            }
-        """)
-        lay.addWidget(self.icon_badge, 0, Qt.AlignmentFlag.AlignCenter)
-
-        # Primary Prompt Text
-        self.prompt_lbl = QLabel(
-            'Drop your XML, JSON, or CSV file here, or <span style="color:#38bdf8; text-decoration: underline;">browse</span>',
-            self
-        )
-        self.prompt_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.prompt_lbl.setStyleSheet("color: #f8fafc; font-size: 13px; font-weight: 500; font-family: 'Segoe UI', 'Inter'; background: transparent;")
-        lay.addWidget(self.prompt_lbl)
-
-        # Subtitle
-        sub_lbl = QLabel("Supports schema validation, streaming payloads up to 500 MB", self)
-        sub_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sub_lbl.setStyleSheet("color: #87929a; font-size: 11px; font-family: 'Segoe UI', 'Inter'; background: transparent;")
-        lay.addWidget(sub_lbl)
-
-        self._set_idle_style()
-
-    def _set_idle_style(self):
-        self.setStyleSheet("""
-            QFrame#converter_dropzone {
-                background-color: #051424;
-                border: 1.5px dashed #273647;
-                border-radius: 12px;
-            }
-            QFrame#converter_dropzone:hover {
-                border: 1.5px dashed #38bdf8;
-                background-color: rgba(56, 189, 248, 0.03);
-            }
-        """)
-
-    def _set_active_drag_style(self):
-        self.setStyleSheet("""
-            QFrame#converter_dropzone {
-                background-color: rgba(56, 189, 248, 0.08);
-                border: 2px dashed #38bdf8;
-                border-radius: 12px;
-            }
-        """)
-
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-            self._set_active_drag_style()
-
-    def dragLeaveEvent(self, event):
-        self._set_idle_style()
-
-    def dropEvent(self, event):
-        self._set_idle_style()
-        urls = event.mimeData().urls()
-        if urls:
-            path = urls[0].toLocalFile()
-            if path:
-                self.file_selected.emit(path)
-                event.acceptProposedAction()
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            path, _ = QFileDialog.getOpenFileName(
-                self,
-                "Select Feed File",
-                "",
-                "Feed Files (*.xml *.json *.csv *.txt);;XML Files (*.xml);;JSON Files (*.json);;CSV Files (*.csv *.txt);;All Files (*.*)"
-            )
-            if path:
-                self.file_selected.emit(path)
-        else:
-            super().mousePressEvent(event)
-
-
-class ConverterFileCard(QFrame):
-    """Loaded file item card with format tag, file size, record estimate, replace and remove buttons."""
-    replace_requested = Signal()
-    remove_requested = Signal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("converter_file_card")
-        self.setFixedHeight(72)
-        self.setStyleSheet("""
-            QFrame#converter_file_card {
-                background-color: #051424;
-                border: 1px solid #1c2b3c;
-                border-radius: 10px;
-            }
-        """)
-
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(14, 12, 14, 12)
-        lay.setSpacing(12)
-        lay.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-
-        # File Icon
-        self.icon_box = QLabel("📄", self)
-        self.icon_box.setFixedSize(36, 36)
-        self.icon_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.icon_box.setStyleSheet("""
-            QLabel {
-                background-color: #122131;
-                border: 1px solid #1c2b3c;
-                border-radius: 8px;
-                color: #38bdf8;
-                font-size: 17px;
-            }
-        """)
-        lay.addWidget(self.icon_box)
-
-        # Details Column
-        details_col = QVBoxLayout()
-        details_col.setSpacing(3)
-        details_col.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-
-        top_row = QHBoxLayout()
-        top_row.setSpacing(8)
-        top_row.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-
-        self.name_lbl = QLabel("candidate_feed.xml", self)
-        self.name_lbl.setStyleSheet("color: #f8fafc; font-size: 13px; font-weight: 600; font-family: 'Segoe UI', 'Inter'; background: transparent;")
-        top_row.addWidget(self.name_lbl)
-
-        self.tag_lbl = QLabel("XML", self)
-        self.tag_lbl.setFixedHeight(20)
-        self.tag_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.tag_lbl.setStyleSheet("""
-            QLabel {
-                background-color: #1c2b3c;
-                color: #38bdf8;
-                border: 1px solid #273647;
-                border-radius: 4px;
-                padding: 1px 7px;
-                font-size: 10px;
-                font-weight: 700;
-                font-family: 'Segoe UI', 'Inter';
-            }
-        """)
-        top_row.addWidget(self.tag_lbl)
-        top_row.addStretch()
-        details_col.addLayout(top_row)
-
-        self.meta_lbl = QLabel("48.2 MB • 14,280 entity records parsed", self)
-        self.meta_lbl.setStyleSheet("color: #87929a; font-size: 11px; font-family: 'Segoe UI', 'Inter'; background: transparent;")
-        details_col.addWidget(self.meta_lbl)
-
-        lay.addLayout(details_col, 1)
-
-        # Right Action Buttons
-        self.replace_btn = QPushButton("Replace", self)
-        self.replace_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.replace_btn.setFixedHeight(30)
-        self.replace_btn.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                color: #d4e4fa;
-                border: 1px solid #1c2b3c;
-                border-radius: 6px;
-                padding: 4px 12px;
-                font-size: 12px;
-                font-weight: 500;
-                font-family: 'Segoe UI', 'Inter';
-            }
-            QPushButton:hover {
-                background-color: #122131;
-                border-color: #273647;
-                color: #ffffff;
-            }
-        """)
-        self.replace_btn.clicked.connect(self.replace_requested.emit)
-        lay.addWidget(self.replace_btn)
-
-        self.remove_btn = QPushButton("✕", self)
-        self.remove_btn.setToolTip("Remove selected file")
-        self.remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.remove_btn.setFixedSize(28, 28)
-        self.remove_btn.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                color: #87929a;
-                border: none;
-                border-radius: 6px;
-                font-size: 13px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: rgba(239, 68, 68, 0.12);
-                color: #ff6b6b;
-            }
-        """)
-        self.remove_btn.clicked.connect(self.remove_requested.emit)
-        lay.addWidget(self.remove_btn)
-
-
 class FeedConverterTab(QWidget):
-    """High-fidelity Feed Converter matching Stitch mockup with live preview & telemetry."""
-    def __init__(self, main_window, parent=None):
+    """Feed Converter matching the exact Feed Analyzer UI aesthetic."""
+    def __init__(self, main_window=None, parent=None):
         super().__init__(parent)
         self.main_window = main_window
         self.setObjectName("converter_tab")
@@ -1148,7 +927,7 @@ class FeedConverterTab(QWidget):
         self.last_converted_path = None
         self.last_converted_content = ""
         self.target_format = "JSON"
-        self.history = []  # List of dicts: {"name", "path", "in_fmt", "out_fmt", "time", "count"}
+        self.history = []
 
         root_lay = QVBoxLayout(self)
         root_lay.setContentsMargins(0, 0, 0, 0)
@@ -1160,21 +939,21 @@ class FeedConverterTab(QWidget):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setStyleSheet("""
             QScrollArea {
-                background-color: #051424;
+                background-color: #0b0f19;
                 border: none;
             }
             QScrollBar:vertical {
-                background: #051424;
+                background: #0b0f19;
                 width: 6px;
                 margin: 0px;
             }
             QScrollBar::handle:vertical {
-                background: #1c2b3c;
+                background: rgba(255, 255, 255, 0.12);
                 min-height: 20px;
                 border-radius: 3px;
             }
             QScrollBar::handle:vertical:hover {
-                background: #38bdf8;
+                background: #6366f1;
             }
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
                 height: 0px;
@@ -1182,10 +961,10 @@ class FeedConverterTab(QWidget):
         """)
 
         container = QWidget()
-        container.setStyleSheet("background-color: #051424;")
+        container.setStyleSheet("background-color: #0b0f19;")
         c_lay = QVBoxLayout(container)
         c_lay.setContentsMargins(32, 24, 32, 32)
-        c_lay.setSpacing(20)
+        c_lay.setSpacing(22)
 
         # ── SUB-HEADER PRECISION BAR ──
         sub_header = self._build_sub_header()
@@ -1195,13 +974,13 @@ class FeedConverterTab(QWidget):
         canvas = QHBoxLayout()
         canvas.setSpacing(24)
 
-        # Left Column: Input & Settings
-        self.left_panel = self._build_left_panel()
-        canvas.addWidget(self.left_panel, 1)
+        # Left Column: Choose Source & Target Card
+        self.left_card = self._build_left_card()
+        canvas.addWidget(self.left_card, 1)
 
-        # Right Column: Output & Live Preview
-        self.right_panel = self._build_right_panel()
-        canvas.addWidget(self.right_panel, 1)
+        # Right Column: Converted Output & Recents Card
+        self.right_card = self._build_right_card()
+        canvas.addWidget(self.right_card, 1)
 
         c_lay.addLayout(canvas)
         c_lay.addStretch()
@@ -1209,808 +988,764 @@ class FeedConverterTab(QWidget):
         scroll.setWidget(container)
         root_lay.addWidget(scroll)
 
-        # Synchronize default UI states
+        # Sync states
         self._update_format_pills()
-        self._update_param_summary()
-
-    # ── Component Builders ───────────────────────────────────────────────────
+        self._set_source_mode("file")
 
     def _build_sub_header(self):
-        """Top sub-header bar with title, Ready pill badge, and top toolbar actions."""
-        header_frame = QFrame(self)
-        header_frame.setStyleSheet("background: transparent; border-bottom: 1px solid #1c2b3c; padding-bottom: 14px;")
-        h_lay = QHBoxLayout(header_frame)
-        h_lay.setContentsMargins(0, 0, 0, 0)
-        h_lay.setSpacing(16)
+        hdr = QFrame(self)
+        hdr.setStyleSheet("background: transparent; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 16px;")
+        hl = QHBoxLayout(hdr)
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.setSpacing(16)
 
-        # Left: Title & Subtitle
         left_col = QVBoxLayout()
         left_col.setSpacing(4)
 
         title_row = QHBoxLayout()
-        title_row.setSpacing(10)
+        title_row.setSpacing(12)
 
-        title_lbl = QLabel("Feed Converter", header_frame)
-        title_lbl.setStyleSheet("color: #f8fafc; font-size: 20px; font-weight: 700; font-family: 'Segoe UI', 'Inter';")
-        title_row.addWidget(title_lbl)
-
-        self.status_badge = QLabel("● Ready", header_frame)
-        self.status_badge.setStyleSheet("""
+        icon_box = QLabel("⇄", hdr)
+        icon_box.setFixedSize(36, 36)
+        icon_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_box.setStyleSheet("""
             QLabel {
-                background-color: rgba(34, 201, 144, 0.12);
-                border: 1px solid rgba(34, 201, 144, 0.3);
-                color: #34d399;
-                border-radius: 12px;
-                padding: 3px 10px;
-                font-size: 11px;
-                font-weight: 600;
-                font-family: 'Segoe UI', 'Inter';
+                background-color: rgba(99, 102, 241, 0.15);
+                border: 1px solid rgba(99, 102, 241, 0.4);
+                border-radius: 10px;
+                color: #818cf8;
+                font-size: 20px;
+                font-weight: bold;
             }
         """)
-        title_row.addWidget(self.status_badge)
+        title_row.addWidget(icon_box)
+
+        title_lbl = QLabel("XML, JSON & CSV Feed Converter", hdr)
+        title_lbl.setStyleSheet("color: #f8fafc; font-size: 20px; font-weight: 700; font-family: 'Space Grotesk', 'Segoe UI';")
+        title_row.addWidget(title_lbl)
         title_row.addStretch()
         left_col.addLayout(title_row)
 
-        sub_lbl = QLabel("Convert feed formats seamlessly between XML, JSON, and CSV.", header_frame)
-        sub_lbl.setStyleSheet("color: #87929a; font-size: 13px; font-family: 'Segoe UI', 'Inter';")
+        sub_lbl = QLabel("Seamless format transformations with constant in-memory footprint.", hdr)
+        sub_lbl.setStyleSheet("color: #94a3b8; font-size: 13px; font-family: 'Outfit', 'Segoe UI';")
         left_col.addWidget(sub_lbl)
 
-        h_lay.addLayout(left_col, 1)
+        hl.addLayout(left_col, 1)
 
-        # Right: Quick Controls
-        right_controls = QHBoxLayout()
-        right_controls.setSpacing(10)
+        # Right status cluster
+        right_cluster = QHBoxLayout()
+        right_cluster.setSpacing(10)
 
-        self.opt_btn = QPushButton("⚙  Format Options", header_frame)
-        self.opt_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.opt_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0d1c2d;
-                color: #d4e4fa;
-                border: 1px solid #1c2b3c;
-                border-radius: 8px;
-                padding: 7px 14px;
-                font-size: 12px;
-                font-weight: 500;
-                font-family: 'Segoe UI', 'Inter';
-            }
-            QPushButton:hover {
-                background-color: #122131;
-                border-color: #273647;
-                color: #ffffff;
+        engine_pill = QLabel("⚙ Engine: v4.2 Rust-SIMD", hdr)
+        engine_pill.setStyleSheet("""
+            QLabel {
+                background-color: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                color: #cbd5e1;
+                border-radius: 16px;
+                padding: 4px 12px;
+                font-size: 11px;
+                font-family: 'JetBrains Mono', monospace;
             }
         """)
-        self.opt_btn.clicked.connect(self._toggle_accordion_from_header)
-        right_controls.addWidget(self.opt_btn)
+        right_cluster.addWidget(engine_pill)
 
-        self.history_btn = QPushButton("⏱  History / Recent ▾", header_frame)
+        self.status_pill = QLabel("● Ready", hdr)
+        self.status_pill.setStyleSheet("""
+            QLabel {
+                background-color: rgba(16, 185, 129, 0.12);
+                border: 1px solid rgba(16, 185, 129, 0.3);
+                color: #10b981;
+                border-radius: 16px;
+                padding: 4px 12px;
+                font-size: 11px;
+                font-weight: 600;
+                font-family: 'Space Grotesk', 'Segoe UI';
+            }
+        """)
+        right_cluster.addWidget(self.status_pill)
+
+        self.history_btn = QPushButton("⏱ History ▾", hdr)
         self.history_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.history_btn.setStyleSheet("""
             QPushButton {
-                background-color: #0d1c2d;
-                color: #d4e4fa;
-                border: 1px solid #1c2b3c;
+                background-color: rgba(255, 255, 255, 0.04);
+                color: #cbd5e1;
+                border: 1px solid rgba(255, 255, 255, 0.1);
                 border-radius: 8px;
-                padding: 7px 14px;
+                padding: 6px 12px;
                 font-size: 12px;
                 font-weight: 500;
-                font-family: 'Segoe UI', 'Inter';
+                font-family: 'Outfit', 'Segoe UI';
             }
             QPushButton:hover {
-                background-color: #122131;
-                border-color: #273647;
+                background-color: rgba(255, 255, 255, 0.08);
                 color: #ffffff;
             }
         """)
         self.history_btn.clicked.connect(self._show_history_menu)
-        right_controls.addWidget(self.history_btn)
+        right_cluster.addWidget(self.history_btn)
 
-        h_lay.addLayout(right_controls)
-        return header_frame
+        hl.addLayout(right_cluster)
+        return hdr
 
-    def _build_left_panel(self):
-        """Builds the Left Column: Input methods, target formats, advanced parameters, and actions."""
+    def _build_left_card(self):
         card = QFrame(self)
-        card.setObjectName("left_config_card")
+        card.setObjectName("glass_card_left")
         card.setStyleSheet("""
-            QFrame#left_config_card {
-                background-color: #0d1c2d;
-                border: 1px solid #1c2b3c;
-                border-radius: 12px;
+            QFrame#glass_card_left {
+                background-color: rgba(17, 24, 39, 0.95);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 16px;
             }
         """)
-
         lay = QVBoxLayout(card)
-        lay.setContentsMargins(22, 22, 22, 22)
+        lay.setContentsMargins(24, 24, 24, 24)
         lay.setSpacing(18)
 
-        # ── SOURCE CHANNEL SEGMENTED CONTROL ──
-        src_row = QHBoxLayout()
-        src_lbl = QLabel("SOURCE CHANNEL", card)
-        src_lbl.setStyleSheet("color: #87929a; font-size: 11px; font-weight: 700; letter-spacing: 0.8px; font-family: 'Segoe UI', 'Inter';")
-        src_row.addWidget(src_lbl)
-        src_row.addStretch()
+        # Card Title
+        hdr_row = QHBoxLayout()
+        icon = QLabel("⎘", card)
+        icon.setStyleSheet("color: #38bdf8; font-size: 18px; font-weight: bold;")
+        hdr_row.addWidget(icon)
 
-        # Capsule Toggle Widget
-        toggle_capsule = QFrame(card)
-        toggle_capsule.setStyleSheet("""
+        title = QLabel("Choose Source", card)
+        title.setStyleSheet("color: #f8fafc; font-size: 18px; font-weight: 700; font-family: 'Space Grotesk', 'Segoe UI';")
+        hdr_row.addWidget(title)
+        hdr_row.addStretch()
+
+        pool_badge = QLabel("BUFFER: 128 MB POOL", card)
+        pool_badge.setStyleSheet("""
+            QLabel {
+                background-color: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                color: #94a3b8;
+                border-radius: 4px;
+                padding: 2px 7px;
+                font-size: 10px;
+                font-family: 'JetBrains Mono', monospace;
+            }
+        """)
+        hdr_row.addWidget(pool_badge)
+        lay.addLayout(hdr_row)
+
+        # Source Type Radio Selection
+        src_lbl = QLabel("SOURCE INGESTION METHOD", card)
+        src_lbl.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 700; letter-spacing: 0.8px; font-family: 'Space Grotesk', 'Segoe UI';")
+        lay.addWidget(src_lbl)
+
+        radio_row = QHBoxLayout()
+        radio_row.setSpacing(10)
+
+        # File radio button card
+        self.btn_radio_file = QPushButton("● Upload XML / JSON / CSV File", card)
+        self.btn_radio_file.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_radio_file.setFixedHeight(44)
+        self.btn_radio_file.clicked.connect(lambda: self._set_source_mode("file"))
+        radio_row.addWidget(self.btn_radio_file, 1)
+
+        # URL radio button card
+        self.btn_radio_url = QPushButton("○ Remote XML / JSON URL", card)
+        self.btn_radio_url.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_radio_url.setFixedHeight(44)
+        self.btn_radio_url.clicked.connect(lambda: self._set_source_mode("url"))
+        radio_row.addWidget(self.btn_radio_url, 1)
+
+        lay.addLayout(radio_row)
+
+        # Source Payload Stack
+        self.payload_stack = QStackedWidget(card)
+        self.payload_stack.setStyleSheet("background: transparent;")
+
+        # Page 0: File Input Group
+        file_box = QWidget()
+        fb_lay = QVBoxLayout(file_box)
+        fb_lay.setContentsMargins(0, 0, 0, 0)
+        fb_lay.setSpacing(6)
+
+        flbl_row = QHBoxLayout()
+        flbl = QLabel("Active Source Payload", file_box)
+        flbl.setStyleSheet("color: #cbd5e1; font-size: 12px; font-weight: 500; font-family: 'Outfit', 'Segoe UI';")
+        flbl_row.addWidget(flbl)
+        flbl_row.addStretch()
+
+        self.crc_badge = QLabel("CRC32: 0x9AF4D1", file_box)
+        self.crc_badge.setStyleSheet("color: #38bdf8; font-size: 10px; font-family: 'JetBrains Mono', monospace;")
+        flbl_row.addWidget(self.crc_badge)
+        fb_lay.addLayout(flbl_row)
+
+        # Attached Browse Input Group
+        file_input_group = QFrame(file_box)
+        file_input_group.setStyleSheet("""
             QFrame {
-                background-color: #051424;
-                border: 1px solid #1c2b3c;
-                border-radius: 8px;
-                padding: 2px;
-            }
-        """)
-        t_lay = QHBoxLayout(toggle_capsule)
-        t_lay.setContentsMargins(2, 2, 2, 2)
-        t_lay.setSpacing(4)
-
-        self.btn_toggle_file = QPushButton("📁 Local File", toggle_capsule)
-        self.btn_toggle_file.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_toggle_file.clicked.connect(lambda: self._set_source_mode("file"))
-        t_lay.addWidget(self.btn_toggle_file)
-
-        self.btn_toggle_url = QPushButton("🌐 Feed URL", toggle_capsule)
-        self.btn_toggle_url.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_toggle_url.clicked.connect(lambda: self._set_source_mode("url"))
-        t_lay.addWidget(self.btn_toggle_url)
-
-        src_row.addWidget(toggle_capsule)
-        lay.addLayout(src_row)
-
-        # ── SOURCE STACK: Local File vs Feed URL ──
-        self.source_stack = QStackedWidget(card)
-        self.source_stack.setStyleSheet("background: transparent;")
-
-        # Page 0: Local File (Dropzone & File Card)
-        file_container = QWidget()
-        fc_lay = QVBoxLayout(file_container)
-        fc_lay.setContentsMargins(0, 0, 0, 0)
-        fc_lay.setSpacing(10)
-
-        self.dropzone = ConverterDropZone(file_container)
-        self.dropzone.file_selected.connect(self._on_file_selected)
-        fc_lay.addWidget(self.dropzone)
-
-        self.file_card = ConverterFileCard(file_container)
-        self.file_card.replace_requested.connect(self._on_replace_file)
-        self.file_card.remove_requested.connect(self._on_remove_file)
-        self.file_card.setVisible(False)
-        fc_lay.addWidget(self.file_card)
-
-        self.source_stack.addWidget(file_container)
-
-        # Page 1: Feed URL Input
-        url_container = QFrame()
-        url_container.setStyleSheet("""
-            QFrame {
-                background-color: #051424;
-                border: 1px solid #1c2b3c;
-                border-radius: 12px;
-                padding: 14px;
-            }
-        """)
-        uc_lay = QVBoxLayout(url_container)
-        uc_lay.setSpacing(10)
-
-        url_input_row = QHBoxLayout()
-        url_input_row.setSpacing(8)
-
-        self.url_input = QLineEdit(url_container)
-        self.url_input.setPlaceholderText("https://api.example.com/feeds/export.xml")
-        self.url_input.setMinimumHeight(40)
-        self.url_input.setStyleSheet("""
-            QLineEdit {
-                background-color: #0d1c2d;
-                color: #f8fafc;
-                border: 1px solid #1c2b3c;
-                border-radius: 8px;
-                padding: 0 12px;
-                font-size: 13px;
-                font-family: 'Segoe UI', 'Inter';
-            }
-            QLineEdit:focus {
-                border-color: #38bdf8;
-            }
-        """)
-        self.url_input.returnPressed.connect(self.fetch_from_url)
-        url_input_row.addWidget(self.url_input, 1)
-
-        self.fetch_btn = QPushButton("Fetch URL", url_container)
-        self.fetch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.fetch_btn.setMinimumHeight(40)
-        self.fetch_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #38bdf8;
-                color: #001e2c;
-                border: none;
-                border-radius: 8px;
-                font-weight: 700;
-                font-size: 12px;
-                font-family: 'Segoe UI', 'Inter';
-                padding: 0 16px;
-            }
-            QPushButton:hover {
-                background-color: #7bd0ff;
-            }
-            QPushButton:disabled {
-                background-color: #1c2b3c;
-                color: #64748b;
-            }
-        """)
-        self.fetch_btn.clicked.connect(self.fetch_from_url)
-        url_input_row.addWidget(self.fetch_btn)
-        uc_lay.addLayout(url_input_row)
-
-        self.url_status_lbl = QLabel("Fetch remote XML, JSON, or CSV feeds directly into memory.", url_container)
-        self.url_status_lbl.setStyleSheet("color: #87929a; font-size: 11px; font-family: 'Segoe UI', 'Inter'; background: transparent;")
-        uc_lay.addWidget(self.url_status_lbl)
-
-        self.source_stack.addWidget(url_container)
-        lay.addWidget(self.source_stack)
-
-        self._set_source_mode("file")
-
-        # ── TARGET FORMAT SELECTOR ──
-        fmt_header_row = QHBoxLayout()
-        fmt_lbl = QLabel("TARGET FORMAT", card)
-        fmt_lbl.setStyleSheet("color: #87929a; font-size: 11px; font-weight: 700; letter-spacing: 0.8px; font-family: 'Segoe UI', 'Inter';")
-        fmt_header_row.addWidget(fmt_lbl)
-
-        engine_badge = QLabel("Fast In-Memory Engine", card)
-        engine_badge.setStyleSheet("color: #87929a; font-size: 11px; font-family: 'Segoe UI', 'Inter';")
-        fmt_header_row.addWidget(engine_badge, 0, Qt.AlignmentFlag.AlignRight)
-        lay.addLayout(fmt_header_row)
-
-        # 3 Pills: XML, JSON, CSV
-        pills_layout = QHBoxLayout()
-        pills_layout.setSpacing(10)
-
-        self.pill_xml = QPushButton("XML", card)
-        self.pill_xml.setMinimumHeight(44)
-        self.pill_xml.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.pill_xml.clicked.connect(lambda: self.set_target_format("XML"))
-        pills_layout.addWidget(self.pill_xml)
-
-        self.pill_json = QPushButton("● JSON", card)
-        self.pill_json.setMinimumHeight(44)
-        self.pill_json.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.pill_json.clicked.connect(lambda: self.set_target_format("JSON"))
-        pills_layout.addWidget(self.pill_json)
-
-        self.pill_csv = QPushButton("CSV", card)
-        self.pill_csv.setMinimumHeight(44)
-        self.pill_csv.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.pill_csv.clicked.connect(lambda: self.set_target_format("CSV"))
-        pills_layout.addWidget(self.pill_csv)
-
-        lay.addLayout(pills_layout)
-
-        # ── COLLAPSIBLE ADVANCED PARAMETERS ──
-        self.accordion_card = QFrame(card)
-        self.accordion_card.setStyleSheet("""
-            QFrame {
-                background-color: #051424;
-                border: 1px solid #1c2b3c;
+                background-color: rgba(8, 12, 20, 0.85);
+                border: 1px solid rgba(255, 255, 255, 0.1);
                 border-radius: 10px;
             }
         """)
-        ac_lay = QVBoxLayout(self.accordion_card)
-        ac_lay.setContentsMargins(0, 0, 0, 0)
-        ac_lay.setSpacing(0)
+        fig_lay = QHBoxLayout(file_input_group)
+        fig_lay.setContentsMargins(10, 4, 4, 4)
+        fig_lay.setSpacing(8)
 
-        # Accordion Header Button
-        self.accordion_toggle_btn = QPushButton(self.accordion_card)
-        self.accordion_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.accordion_toggle_btn.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
+        # Format Tag Pill
+        self.tag_pill = QLabel("XML", file_input_group)
+        self.tag_pill.setStyleSheet("""
+            QLabel {
+                background-color: rgba(245, 158, 11, 0.15);
+                color: #fbbf24;
+                border: 1px solid rgba(245, 158, 11, 0.3);
+                border-radius: 4px;
+                padding: 2px 7px;
+                font-size: 10px;
+                font-weight: 700;
+                font-family: 'JetBrains Mono', monospace;
+            }
+        """)
+        self.tag_pill.setVisible(False)
+        fig_lay.addWidget(self.tag_pill)
+
+        self.file_path_display = QLineEdit(file_input_group)
+        self.file_path_display.setPlaceholderText("Click Browse to select XML, JSON, or CSV feed...")
+        self.file_path_display.setReadOnly(True)
+        self.file_path_display.setStyleSheet("""
+            QLineEdit {
+                background: transparent;
                 border: none;
-                padding: 12px 14px;
-                text-align: left;
+                color: #f8fafc;
+                font-size: 13px;
+                font-family: 'Outfit', 'Segoe UI';
+            }
+        """)
+        self.file_path_display.mousePressEvent = lambda e: self._on_browse_file()
+        fig_lay.addWidget(self.file_path_display, 1)
+
+        self.file_size_display = QLabel("", file_input_group)
+        self.file_size_display.setStyleSheet("color: #94a3b8; font-size: 12px; font-family: 'JetBrains Mono', monospace;")
+        fig_lay.addWidget(self.file_size_display)
+
+        self.browse_btn = QPushButton("📁 Browse", file_input_group)
+        self.browse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.browse_btn.setFixedHeight(34)
+        self.browse_btn.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(99, 102, 241, 0.15);
+                color: #818cf8;
+                border: 1px solid rgba(99, 102, 241, 0.4);
+                border-radius: 8px;
+                padding: 0 16px;
+                font-size: 12px;
+                font-weight: 600;
+                font-family: 'Space Grotesk', 'Segoe UI';
             }
             QPushButton:hover {
-                background-color: #0d1c2d;
+                background-color: rgba(99, 102, 241, 0.3);
+                color: #ffffff;
             }
         """)
-        self.accordion_toggle_btn.clicked.connect(self._toggle_accordion)
+        self.browse_btn.clicked.connect(self._on_browse_file)
+        fig_lay.addWidget(self.browse_btn)
 
-        atb_lay = QHBoxLayout(self.accordion_toggle_btn)
-        atb_lay.setContentsMargins(0, 0, 0, 0)
+        fb_lay.addWidget(file_input_group)
 
-        atb_left = QLabel("⚙  Advanced Parameters", self.accordion_toggle_btn)
-        atb_left.setStyleSheet("color: #f8fafc; font-size: 13px; font-weight: 500; font-family: 'Segoe UI', 'Inter'; background: transparent;")
-        atb_lay.addWidget(atb_left)
+        file_hint = QLabel("Direct instant parsing for feeds of any size (100MB to 50GB+).", file_box)
+        file_hint.setStyleSheet("color: #64748b; font-size: 11px; font-family: 'Outfit', 'Segoe UI';")
+        fb_lay.addWidget(file_hint)
 
-        self.summary_lbl = QLabel("2 spaces • Comma • Flat hierarchy", self.accordion_toggle_btn)
-        self.summary_lbl.setStyleSheet("color: #87929a; font-size: 11px; font-family: 'Segoe UI', 'Inter'; background: transparent;")
-        atb_lay.addWidget(self.summary_lbl, 0, Qt.AlignmentFlag.AlignRight)
+        self.payload_stack.addWidget(file_box)
 
-        self.accordion_arrow = QLabel("▼", self.accordion_toggle_btn)
-        self.accordion_arrow.setStyleSheet("color: #87929a; font-size: 11px; font-weight: bold; background: transparent; padding-left: 6px;")
-        atb_lay.addWidget(self.accordion_arrow)
+        # Page 1: URL Input Group
+        url_box = QWidget()
+        ub_lay = QVBoxLayout(url_box)
+        ub_lay.setContentsMargins(0, 0, 0, 0)
+        ub_lay.setSpacing(6)
 
-        ac_lay.addWidget(self.accordion_toggle_btn)
+        ulbl = QLabel("Feed Endpoint URL", url_box)
+        ulbl.setStyleSheet("color: #cbd5e1; font-size: 12px; font-weight: 500; font-family: 'Outfit', 'Segoe UI';")
+        ub_lay.addWidget(ulbl)
 
-        # Accordion Body
-        self.accordion_body = QWidget(self.accordion_card)
-        self.accordion_body.setStyleSheet("border-top: 1px solid #1c2b3c; padding: 12px 14px; background: transparent;")
-        ab_lay = QVBoxLayout(self.accordion_body)
-        ab_lay.setContentsMargins(14, 12, 14, 14)
-        ab_lay.setSpacing(12)
+        url_input_group = QFrame(url_box)
+        url_input_group.setStyleSheet("""
+            QFrame {
+                background-color: rgba(8, 12, 20, 0.85);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 10px;
+            }
+        """)
+        uig_lay = QHBoxLayout(url_input_group)
+        uig_lay.setContentsMargins(10, 4, 4, 4)
+        uig_lay.setSpacing(8)
 
-        # Combo controls row
-        combos_row = QHBoxLayout()
-        combos_row.setSpacing(12)
-
-        # Indentation combo
-        ind_col = QVBoxLayout()
-        ind_col.setSpacing(4)
-        ind_lbl = QLabel("Indentation Level", self.accordion_body)
-        ind_lbl.setStyleSheet("color: #87929a; font-size: 11px; font-family: 'Segoe UI', 'Inter';")
-        ind_col.addWidget(ind_lbl)
-
-        self.indent_combo = QComboBox(self.accordion_body)
-        self.indent_combo.addItems(["2 Spaces", "4 Spaces", "Compact (Minified 1-line)", "Tabs"])
-        self.indent_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #0d1c2d;
+        self.url_input = QLineEdit(url_input_group)
+        self.url_input.setPlaceholderText("https://api.example.com/feeds/export.xml")
+        self.url_input.setStyleSheet("""
+            QLineEdit {
+                background: transparent;
+                border: none;
                 color: #f8fafc;
-                border: 1px solid #1c2b3c;
-                border-radius: 6px;
-                padding: 6px 10px;
+                font-size: 13px;
+                font-family: 'Outfit', 'Segoe UI';
+            }
+        """)
+        self.url_input.returnPressed.connect(self.fetch_from_url)
+        uig_lay.addWidget(self.url_input, 1)
+
+        self.fetch_btn = QPushButton("Fetch URL", url_input_group)
+        self.fetch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.fetch_btn.setFixedHeight(34)
+        self.fetch_btn.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(99, 102, 241, 0.15);
+                color: #818cf8;
+                border: 1px solid rgba(99, 102, 241, 0.4);
+                border-radius: 8px;
+                padding: 0 16px;
                 font-size: 12px;
-                font-family: 'Segoe UI', 'Inter';
+                font-weight: 600;
+                font-family: 'Space Grotesk', 'Segoe UI';
             }
-            QComboBox::drop-down { border: none; width: 20px; }
-            QComboBox QAbstractItemView {
-                background-color: #0d1c2d;
-                color: #f8fafc;
-                selection-background-color: #1c2b3c;
-                border: 1px solid #1c2b3c;
+            QPushButton:hover {
+                background-color: rgba(99, 102, 241, 0.3);
+                color: #ffffff;
             }
         """)
-        self.indent_combo.currentIndexChanged.connect(self._update_param_summary)
-        ind_col.addWidget(self.indent_combo)
-        combos_row.addLayout(ind_col, 1)
+        self.fetch_btn.clicked.connect(self.fetch_from_url)
+        uig_lay.addWidget(self.fetch_btn)
 
-        # CSV Delimiter combo
-        delim_col = QVBoxLayout()
-        delim_col.setSpacing(4)
-        delim_lbl = QLabel("CSV Delimiter", self.accordion_body)
-        delim_lbl.setStyleSheet("color: #87929a; font-size: 11px; font-family: 'Segoe UI', 'Inter';")
-        delim_col.addWidget(delim_lbl)
+        ub_lay.addWidget(url_input_group)
 
-        self.delim_combo = QComboBox(self.accordion_body)
-        self.delim_combo.addItems(["Comma (,)", "Semicolon (;)", "Tab (\\t)", "Pipe (|)"])
-        self.delim_combo.setStyleSheet("""
+        self.url_hint = QLabel("Directly streams HTTP/HTTPS XML/JSON endpoints into memory.", url_box)
+        self.url_hint.setStyleSheet("color: #64748b; font-size: 11px; font-family: 'Outfit', 'Segoe UI';")
+        ub_lay.addWidget(self.url_hint)
+
+        self.payload_stack.addWidget(url_box)
+        lay.addWidget(self.payload_stack)
+
+        # Target Format Selector
+        fmt_lbl = QLabel("TARGET FORMAT", card)
+        fmt_lbl.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 700; letter-spacing: 0.8px; font-family: 'Space Grotesk', 'Segoe UI';")
+        lay.addWidget(fmt_lbl)
+
+        pills_row = QHBoxLayout()
+        pills_row.setSpacing(10)
+
+        self.pill_xml = QPushButton("XML", card)
+        self.pill_xml.setMinimumHeight(42)
+        self.pill_xml.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.pill_xml.clicked.connect(lambda: self.set_target_format("XML"))
+        pills_row.addWidget(self.pill_xml)
+
+        self.pill_json = QPushButton("✓ JSON", card)
+        self.pill_json.setMinimumHeight(42)
+        self.pill_json.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.pill_json.clicked.connect(lambda: self.set_target_format("JSON"))
+        pills_row.addWidget(self.pill_json)
+
+        self.pill_csv = QPushButton("CSV", card)
+        self.pill_csv.setMinimumHeight(42)
+        self.pill_csv.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.pill_csv.clicked.connect(lambda: self.set_target_format("CSV"))
+        pills_row.addWidget(self.pill_csv)
+
+        lay.addLayout(pills_row)
+
+        # Ingestion Mode Preset Callout Box
+        preset_box = QFrame(card)
+        preset_box.setStyleSheet("""
+            QFrame {
+                background-color: rgba(245, 158, 11, 0.03);
+                border: 1px solid rgba(245, 158, 11, 0.22);
+                border-radius: 12px;
+                padding: 12px;
+            }
+        """)
+        pb_lay = QVBoxLayout(preset_box)
+        pb_lay.setContentsMargins(12, 10, 12, 12)
+        pb_lay.setSpacing(8)
+
+        pb_title = QLabel("⚡ Ingestion Mode Preset", preset_box)
+        pb_title.setStyleSheet("color: #fbbf24; font-size: 12px; font-weight: 600; font-family: 'Space Grotesk', 'Segoe UI';")
+        pb_lay.addWidget(pb_title)
+
+        self.preset_combo = QComboBox(preset_box)
+        self.preset_combo.addItems([
+            "🚀 Extreme Fast Mode (~15,000+ rec/s - 2 Spaces, Flat Schema)",
+            "🛡️ Schema-Strict Validation Mode (Type Integrity & Delimiters)",
+            "📦 Stream Compact Mode (No Indent, Max Compression)",
+            "⚙️ Custom Parameters (Indentation & Delimiters)"
+        ])
+        self.preset_combo.setFixedHeight(38)
+        self.preset_combo.setStyleSheet("""
             QComboBox {
-                background-color: #0d1c2d;
+                background-color: #080c14;
                 color: #f8fafc;
-                border: 1px solid #1c2b3c;
-                border-radius: 6px;
-                padding: 6px 10px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 8px;
+                padding: 0 10px;
                 font-size: 12px;
-                font-family: 'Segoe UI', 'Inter';
+                font-family: 'Outfit', 'Segoe UI';
             }
-            QComboBox::drop-down { border: none; width: 20px; }
+            QComboBox::drop-down { border: none; width: 24px; }
             QComboBox QAbstractItemView {
-                background-color: #0d1c2d;
+                background-color: #080c14;
                 color: #f8fafc;
-                selection-background-color: #1c2b3c;
-                border: 1px solid #1c2b3c;
+                selection-background-color: rgba(99, 102, 241, 0.3);
+                border: 1px solid rgba(255, 255, 255, 0.1);
             }
         """)
-        self.delim_combo.currentIndexChanged.connect(self._update_param_summary)
-        delim_col.addWidget(self.delim_combo)
-        combos_row.addLayout(delim_col, 1)
+        pb_lay.addWidget(self.preset_combo)
 
-        ab_lay.addLayout(combos_row)
+        pb_sub = QLabel("Optimized SIMD in-memory transformer with zero disk buffering.", preset_box)
+        pb_sub.setStyleSheet("color: #94a3b8; font-size: 11px; font-family: 'Outfit', 'Segoe UI';")
+        pb_lay.addWidget(pb_sub)
 
-        # Checkbox 1: Flatten nested schema
-        self.chk_flatten = QCheckBox("Flatten nested schema objects", self.accordion_body)
+        lay.addWidget(preset_box)
+
+        # Pipeline Transform Flags
+        flags_lbl = QLabel("PIPELINE TRANSFORM FLAGS", card)
+        flags_lbl.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 700; letter-spacing: 0.8px; font-family: 'Space Grotesk', 'Segoe UI';")
+        lay.addWidget(flags_lbl)
+
+        flags_row = QHBoxLayout()
+        flags_row.setSpacing(10)
+
+        self.chk_minify = QCheckBox("Minify Payload", card)
+        self.chk_flatten = QCheckBox("Flatten Nested", card)
         self.chk_flatten.setChecked(True)
-        self.chk_flatten.setStyleSheet("""
-            QCheckBox {
-                color: #f8fafc;
-                font-size: 12px;
-                font-family: 'Segoe UI', 'Inter';
-                spacing: 8px;
-            }
-            QCheckBox::indicator {
-                width: 16px;
-                height: 16px;
-                border-radius: 4px;
-                border: 1px solid #273647;
-                background-color: #0d1c2d;
-            }
-            QCheckBox::indicator:checked {
-                background-color: #38bdf8;
-                border-color: #38bdf8;
-            }
-        """)
-        self.chk_flatten.stateChanged.connect(self._update_param_summary)
-        ab_lay.addWidget(self.chk_flatten)
+        self.chk_validate = QCheckBox("Validate UTF-8", card)
+        self.chk_validate.setChecked(True)
 
-        # Checkbox 2: Strip XML root attributes & comments
-        self.chk_strip_xml = QCheckBox("Strip XML root attributes & comments", self.accordion_body)
-        self.chk_strip_xml.setChecked(False)
-        self.chk_strip_xml.setStyleSheet("""
-            QCheckBox {
-                color: #f8fafc;
-                font-size: 12px;
-                font-family: 'Segoe UI', 'Inter';
-                spacing: 8px;
-            }
-            QCheckBox::indicator {
-                width: 16px;
-                height: 16px;
-                border-radius: 4px;
-                border: 1px solid #273647;
-                background-color: #0d1c2d;
-            }
-            QCheckBox::indicator:checked {
-                background-color: #38bdf8;
-                border-color: #38bdf8;
-            }
-        """)
-        self.chk_strip_xml.stateChanged.connect(self._update_param_summary)
-        ab_lay.addWidget(self.chk_strip_xml)
+        for chk in [self.chk_minify, self.chk_flatten, self.chk_validate]:
+            chk.setStyleSheet("""
+                QCheckBox {
+                    color: #cbd5e1;
+                    font-size: 12px;
+                    font-family: 'Outfit', 'Segoe UI';
+                    spacing: 6px;
+                }
+                QCheckBox::indicator {
+                    width: 16px;
+                    height: 16px;
+                    border-radius: 4px;
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    background-color: #080c14;
+                }
+                QCheckBox::indicator:checked {
+                    background-color: #6366f1;
+                    border-color: #6366f1;
+                }
+            """)
+            flags_row.addWidget(chk)
 
-        self.accordion_body.setVisible(False)
-        ac_lay.addWidget(self.accordion_body)
-        lay.addWidget(self.accordion_card)
+        lay.addLayout(flags_row)
 
-        # ── ACTION FOOTER ──
+        # Action Buttons
         action_row = QHBoxLayout()
         action_row.setSpacing(10)
 
-        self.reset_btn = QPushButton("Reset", card)
+        self.reset_btn = QPushButton("🧹 Reset", card)
         self.reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.reset_btn.setMinimumHeight(44)
-        self.reset_btn.setMinimumWidth(85)
+        self.reset_btn.setFixedHeight(44)
+        self.reset_btn.setFixedWidth(90)
         self.reset_btn.setStyleSheet("""
             QPushButton {
-                background-color: transparent;
-                color: #87929a;
-                border: 1px solid #1c2b3c;
-                border-radius: 8px;
+                background-color: rgba(255, 255, 255, 0.04);
+                color: #cbd5e1;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 10px;
                 font-size: 13px;
                 font-weight: 500;
-                font-family: 'Segoe UI', 'Inter';
+                font-family: 'Outfit', 'Segoe UI';
             }
             QPushButton:hover {
-                background-color: #122131;
-                border-color: #273647;
-                color: #f8fafc;
+                background-color: rgba(255, 255, 255, 0.08);
+                color: #ffffff;
             }
         """)
         self.reset_btn.clicked.connect(self.reset_tab)
         action_row.addWidget(self.reset_btn)
 
-        self.convert_btn = QPushButton("⚡  Convert Feed", card)
+        self.convert_btn = QPushButton("▶ Convert Feed", card)
         self.convert_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.convert_btn.setMinimumHeight(44)
+        self.convert_btn.setFixedHeight(44)
         self.convert_btn.setStyleSheet("""
             QPushButton {
-                background-color: #38bdf8;
-                color: #001e2c;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6366f1, stop:1 #4f46e5);
+                color: #ffffff;
                 border: none;
-                border-radius: 8px;
+                border-radius: 10px;
                 font-size: 14px;
                 font-weight: 700;
-                font-family: 'Segoe UI', 'Inter';
+                font-family: 'Space Grotesk', 'Segoe UI';
             }
             QPushButton:hover {
-                background-color: #7bd0ff;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4f46e5, stop:1 #4338ca);
             }
-            QPushButton:pressed {
-                background-color: #0284c7;
+            QPushButton:disabled {
+                background: #1e293b;
+                color: #64748b;
             }
         """)
         self.convert_btn.clicked.connect(self.run_conversion)
         action_row.addWidget(self.convert_btn, 1)
 
         lay.addLayout(action_row)
-
-        # ── MICRO INFORMATION STRIP ──
-        micro_strip = QHBoxLayout()
-        engine_lbl = QLabel("Engine: Python In-Memory SIMD / Streaming", card)
-        engine_lbl.setStyleSheet("color: #64748b; font-size: 11px; font-family: 'Segoe UI', 'Inter';")
-        micro_strip.addWidget(engine_lbl)
-
-        sec_lbl = QLabel("● Zero data retained outside local disk", card)
-        sec_lbl.setStyleSheet("color: #34d399; font-size: 11px; font-family: 'Segoe UI', 'Inter';")
-        micro_strip.addWidget(sec_lbl, 0, Qt.AlignmentFlag.AlignRight)
-
-        lay.addLayout(micro_strip)
         return card
 
-    def _build_right_panel(self):
-        """Builds the Right Column: Output code preview, live telemetry, and quick checks."""
-        container = QFrame(self)
-        container.setObjectName("right_output_card")
-        container.setStyleSheet("background: transparent;")
-
-        lay = QVBoxLayout(container)
-        lay.setContentsMargins(0, 0, 0, 0)
+    def _build_right_card(self):
+        card = QFrame(self)
+        card.setObjectName("glass_card_right")
+        card.setStyleSheet("""
+            QFrame#glass_card_right {
+                background-color: rgba(17, 24, 39, 0.95);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 16px;
+            }
+        """)
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(24, 24, 24, 24)
         lay.setSpacing(14)
 
-        # Main Code Card
-        code_card = QFrame(container)
-        code_card.setObjectName("code_card_frame")
-        code_card.setStyleSheet("""
-            QFrame#code_card_frame {
-                background-color: #0d1c2d;
-                border: 1px solid #1c2b3c;
-                border-radius: 12px;
-            }
-        """)
-        cc_lay = QVBoxLayout(code_card)
-        cc_lay.setContentsMargins(0, 0, 0, 0)
-        cc_lay.setSpacing(0)
+        # Header with Output Toolbar
+        hdr_row = QHBoxLayout()
+        icon = QLabel("🕒", card)
+        icon.setStyleSheet("color: #94a3b8; font-size: 16px;")
+        hdr_row.addWidget(icon)
 
-        # Header Bar with Quick Action Toolbar
-        hdr = QFrame(code_card)
-        hdr.setStyleSheet("""
-            QFrame {
-                background-color: #051424;
-                border-bottom: 1px solid #1c2b3c;
-                border-top-left-radius: 12px;
-                border-top-right-radius: 12px;
-                padding: 10px 14px;
-            }
-        """)
-        h_lay = QHBoxLayout(hdr)
-        h_lay.setContentsMargins(0, 0, 0, 0)
-        h_lay.setSpacing(10)
+        title = QLabel("Recent Conversions & Output Preview", card)
+        title.setStyleSheet("color: #f8fafc; font-size: 16px; font-weight: 700; font-family: 'Space Grotesk', 'Segoe UI';")
+        hdr_row.addWidget(title)
+        hdr_row.addStretch()
 
-        left_hdr = QHBoxLayout()
-        left_hdr.setSpacing(8)
-
-        data_icon = QLabel("{ }", hdr)
-        data_icon.setStyleSheet("color: #38bdf8; font-weight: bold; font-size: 13px; font-family: 'Consolas', monospace;")
-        left_hdr.addWidget(data_icon)
-
-        self.preview_title = QLabel("Output Preview: (No feed converted yet)", hdr)
-        self.preview_title.setStyleSheet("color: #f8fafc; font-size: 13px; font-weight: 600; font-family: 'Segoe UI', 'Inter';")
-        left_hdr.addWidget(self.preview_title)
-        h_lay.addLayout(left_hdr, 1)
-
-        # Action Buttons
-        actions_lay = QHBoxLayout()
-        actions_lay.setSpacing(8)
-
-        self.copy_btn = QPushButton("📋 Copy", hdr)
+        # Toolbar
+        self.copy_btn = QPushButton("📋 Copy", card)
         self.copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.copy_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0d1c2d;
-                color: #d4e4fa;
-                border: 1px solid #1c2b3c;
-                border-radius: 6px;
-                padding: 5px 10px;
-                font-size: 11px;
-                font-weight: 500;
-                font-family: 'Segoe UI', 'Inter';
-            }
-            QPushButton:hover {
-                background-color: #122131;
-                border-color: #273647;
-                color: #ffffff;
-            }
-        """)
+        self.copy_btn.setStyleSheet(self._btn_toolbar_style())
         self.copy_btn.clicked.connect(self.copy_preview)
-        actions_lay.addWidget(self.copy_btn)
+        hdr_row.addWidget(self.copy_btn)
 
-        self.download_btn = QPushButton("⬇ Download", hdr)
+        self.download_btn = QPushButton("⬇ Download", card)
         self.download_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.download_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0d1c2d;
-                color: #d4e4fa;
-                border: 1px solid #1c2b3c;
-                border-radius: 6px;
-                padding: 5px 10px;
-                font-size: 11px;
-                font-weight: 500;
-                font-family: 'Segoe UI', 'Inter';
-            }
-            QPushButton:hover {
-                background-color: #122131;
-                border-color: #273647;
-                color: #ffffff;
-            }
-        """)
+        self.download_btn.setStyleSheet(self._btn_toolbar_style())
         self.download_btn.clicked.connect(self.download_output)
-        actions_lay.addWidget(self.download_btn)
+        hdr_row.addWidget(self.download_btn)
 
-        self.analyze_btn = QPushButton("⚡ Analyze in Workspace", hdr)
+        self.analyze_btn = QPushButton("⚡ Analyze in Workspace", card)
         self.analyze_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.analyze_btn.setStyleSheet("""
             QPushButton {
-                background-color: #122131;
-                color: #38bdf8;
-                border: 1px solid rgba(56, 189, 248, 0.4);
+                background-color: rgba(99, 102, 241, 0.15);
+                color: #818cf8;
+                border: 1px solid rgba(99, 102, 241, 0.4);
                 border-radius: 6px;
                 padding: 5px 12px;
                 font-size: 11px;
                 font-weight: 600;
-                font-family: 'Segoe UI', 'Inter';
+                font-family: 'Space Grotesk', 'Segoe UI';
             }
             QPushButton:hover {
-                background-color: rgba(56, 189, 248, 0.15);
+                background-color: rgba(99, 102, 241, 0.3);
                 color: #ffffff;
             }
         """)
         self.analyze_btn.clicked.connect(self.analyze_in_workspace)
-        actions_lay.addWidget(self.analyze_btn)
+        hdr_row.addWidget(self.analyze_btn)
 
-        h_lay.addLayout(actions_lay)
-        cc_lay.addWidget(hdr)
+        lay.addLayout(hdr_row)
 
-        # Monospace Code Inspector / Live Preview
-        self.preview_viewer = QTextBrowser(code_card)
-        self.preview_viewer.setMinimumHeight(400)
+        # Badges Row (when converted)
+        self.badges_bar = QFrame(card)
+        self.badges_bar.setStyleSheet("background: transparent;")
+        bb_lay = QHBoxLayout(self.badges_bar)
+        bb_lay.setContentsMargins(0, 0, 0, 0)
+        bb_lay.setSpacing(8)
+
+        self.badge_fmt = self._make_badge("XML ➔ JSON", "#818cf8", "rgba(99, 102, 241, 0.15)", "rgba(99, 102, 241, 0.3)")
+        bb_lay.addWidget(self.badge_fmt)
+
+        self.badge_utf8 = self._make_badge("UTF-8 Clean", "#cbd5e1", "rgba(255, 255, 255, 0.05)", "rgba(255, 255, 255, 0.1)")
+        bb_lay.addWidget(self.badge_utf8)
+
+        self.badge_delta = self._make_badge("-24.5% Delta", "#10b981", "rgba(16, 185, 129, 0.15)", "rgba(16, 185, 129, 0.3)")
+        bb_lay.addWidget(self.badge_delta)
+
+        self.badge_disk = self._make_badge("Zero Spill to Disk", "#38bdf8", "rgba(14, 165, 233, 0.12)", "rgba(14, 165, 233, 0.25)")
+        bb_lay.addWidget(self.badge_disk)
+
+        bb_lay.addStretch()
+        self.badges_bar.setVisible(False)
+        lay.addWidget(self.badges_bar)
+
+        # Output Stack: Page 0 = Empty State, Page 1 = Code Inspector
+        self.output_stack = QStackedWidget(card)
+        self.output_stack.setStyleSheet("background: transparent;")
+
+        # Page 0: Empty State
+        empty_widget = QFrame()
+        empty_widget.setStyleSheet("""
+            QFrame {
+                background-color: rgba(8, 12, 20, 0.6);
+                border: 1px dashed rgba(255, 255, 255, 0.08);
+                border-radius: 12px;
+            }
+        """)
+        ew_lay = QVBoxLayout(empty_widget)
+        ew_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ew_lay.setSpacing(12)
+
+        db_icon = QLabel("🗄️", empty_widget)
+        db_icon.setStyleSheet("font-size: 40px; color: rgba(255, 255, 255, 0.3);")
+        db_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ew_lay.addWidget(db_icon)
+
+        empty_txt = QLabel("No feeds converted yet. Select a file or URL above to start!", empty_widget)
+        empty_txt.setStyleSheet("color: #94a3b8; font-size: 13px; font-family: 'Outfit', 'Segoe UI';")
+        empty_txt.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ew_lay.addWidget(empty_txt)
+
+        self.output_stack.addWidget(empty_widget)
+
+        # Page 1: Code Inspector
+        code_widget = QWidget()
+        cw_lay = QVBoxLayout(code_widget)
+        cw_lay.setContentsMargins(0, 0, 0, 0)
+        cw_lay.setSpacing(0)
+
+        self.preview_viewer = QTextBrowser(code_widget)
+        self.preview_viewer.setMinimumHeight(380)
         self.preview_viewer.setOpenExternalLinks(True)
         self.preview_viewer.setStyleSheet("""
             QTextBrowser {
-                background-color: #051424;
+                background-color: #070a13;
                 color: #cbd5e1;
-                border: none;
-                padding: 16px;
-                font-family: 'Consolas', 'JetBrains Mono', 'Courier New', monospace;
+                border: 1px solid rgba(255, 255, 255, 0.06);
+                border-radius: 10px;
+                padding: 14px;
+                font-family: 'JetBrains Mono', 'Consolas', monospace;
                 font-size: 12px;
                 line-height: 1.5;
             }
             QScrollBar:vertical, QScrollBar:horizontal {
-                background: #051424;
+                background: #070a13;
                 width: 6px;
                 height: 6px;
             }
             QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
-                background: #1c2b3c;
+                background: rgba(255, 255, 255, 0.12);
                 border-radius: 3px;
             }
             QScrollBar::handle:hover {
-                background: #38bdf8;
+                background: #6366f1;
             }
         """)
-        self.preview_viewer.setPlaceholderText(
-            "// Live Output Inspector\n// Select a feed file or URL and click 'Convert Feed' to preview syntax-highlighted data."
-        )
-        cc_lay.addWidget(self.preview_viewer, 1)
+        cw_lay.addWidget(self.preview_viewer)
+        self.output_stack.addWidget(code_widget)
 
-        # Bottom Telemetry & Status Bar
-        self.telemetry_bar = QFrame(code_card)
-        self.telemetry_bar.setStyleSheet("""
+        lay.addWidget(self.output_stack, 1)
+
+        # Bottom Telemetry Footer
+        telemetry_frame = QFrame(card)
+        telemetry_frame.setStyleSheet("""
             QFrame {
-                background-color: #122131;
-                border-top: 1px solid #1c2b3c;
-                border-bottom-left-radius: 12px;
-                border-bottom-right-radius: 12px;
+                background-color: rgba(8, 12, 20, 0.8);
+                border: 1px solid rgba(255, 255, 255, 0.06);
+                border-radius: 10px;
                 padding: 8px 14px;
             }
         """)
-        t_lay = QHBoxLayout(self.telemetry_bar)
-        t_lay.setContentsMargins(0, 0, 0, 0)
-        t_lay.setSpacing(12)
+        tf_lay = QHBoxLayout(telemetry_frame)
+        tf_lay.setContentsMargins(0, 0, 0, 0)
+        tf_lay.setSpacing(12)
 
-        self.telemetry_status = QLabel("Ready for conversion", self.telemetry_bar)
-        self.telemetry_status.setStyleSheet("color: #87929a; font-size: 11px; font-weight: 500; font-family: 'Segoe UI', 'Inter'; background: transparent;")
-        t_lay.addWidget(self.telemetry_status, 1)
+        self.telemetry_status = QLabel("Ready for conversion", telemetry_frame)
+        self.telemetry_status.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 500; font-family: 'Space Grotesk', 'Segoe UI';")
+        tf_lay.addWidget(self.telemetry_status, 1)
 
-        self.telemetry_metrics = QLabel("Memory: — • Throughput: — • Ratio: —", self.telemetry_bar)
-        self.telemetry_metrics.setStyleSheet("color: #87929a; font-size: 11px; font-family: 'Segoe UI', 'Inter'; background: transparent;")
-        t_lay.addWidget(self.telemetry_metrics, 0, Qt.AlignmentFlag.AlignRight)
+        self.telemetry_metrics = QLabel("Throughput: — • Footprint: —", telemetry_frame)
+        self.telemetry_metrics.setStyleSheet("color: #94a3b8; font-size: 11px; font-family: 'JetBrains Mono', monospace;")
+        tf_lay.addWidget(self.telemetry_metrics, 0, Qt.AlignmentFlag.AlignRight)
 
-        cc_lay.addWidget(self.telemetry_bar)
-        lay.addWidget(code_card, 1)
+        lay.addWidget(telemetry_frame)
+        return card
 
-        # ── OUTPUT QUICK CHECKS (3 Stat Tiles) ──
-        quick_checks = QHBoxLayout()
-        quick_checks.setSpacing(10)
-
-        # Tile 1: Schema Validity
-        self.card_validity = self._create_quick_check_card("Schema Validity", "● Ready", "#34d399")
-        quick_checks.addWidget(self.card_validity)
-
-        # Tile 2: Encoding
-        self.card_encoding = self._create_quick_check_card("Character Encoding", "UTF-8 Clean", "#f8fafc")
-        quick_checks.addWidget(self.card_encoding)
-
-        # Tile 3: File Delta
-        self.card_delta = self._create_quick_check_card("Total File Delta", "0.0 MB → 0.0 MB", "#38bdf8")
-        quick_checks.addWidget(self.card_delta)
-
-        lay.addLayout(quick_checks)
-        return container
-
-    def _create_quick_check_card(self, title, default_val, val_color):
-        tile = QFrame()
-        tile.setStyleSheet("""
-            QFrame {
-                background-color: #0d1c2d;
-                border: 1px solid #1c2b3c;
-                border-radius: 8px;
-                padding: 10px 14px;
+    def _btn_toolbar_style(self):
+        return """
+            QPushButton {
+                background-color: rgba(255, 255, 255, 0.04);
+                color: #cbd5e1;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
+                padding: 5px 10px;
+                font-size: 11px;
+                font-weight: 500;
+                font-family: 'Outfit', 'Segoe UI';
             }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.08);
+                color: #ffffff;
+            }
+        """
+
+    def _make_badge(self, text, color, bg, border):
+        lbl = QLabel(text)
+        lbl.setStyleSheet(f"""
+            QLabel {{
+                background-color: {bg};
+                color: {color};
+                border: 1px solid {border};
+                border-radius: 6px;
+                padding: 3px 10px;
+                font-size: 11px;
+                font-weight: 600;
+                font-family: 'Space Grotesk', monospace;
+            }}
         """)
-        tl = QHBoxLayout(tile)
-        tl.setContentsMargins(0, 0, 0, 0)
+        return lbl
 
-        lbl = QLabel(title, tile)
-        lbl.setStyleSheet("color: #87929a; font-size: 11px; font-family: 'Segoe UI', 'Inter'; background: transparent;")
-        tl.addWidget(lbl)
-
-        val = QLabel(default_val, tile)
-        val.setObjectName("check_val")
-        val.setStyleSheet(f"color: {val_color}; font-size: 11px; font-weight: 600; font-family: 'Segoe UI', 'Inter'; background: transparent;")
-        tl.addWidget(val, 0, Qt.AlignmentFlag.AlignRight)
-        return tile
-
-    # ── Source Channel Switcher ──────────────────────────────────────────────
+    # ── Source Ingestion Switch ──────────────────────────────────────────────
 
     def _set_source_mode(self, mode):
-        """Switches between Local File mode and Feed URL mode."""
+        active_style = """
+            QPushButton {
+                background-color: rgba(99, 102, 241, 0.14);
+                color: #ffffff;
+                border: 1px solid rgba(99, 102, 241, 0.6);
+                border-radius: 10px;
+                font-size: 12px;
+                font-weight: 600;
+                font-family: 'Space Grotesk', 'Segoe UI';
+                text-align: left;
+                padding-left: 14px;
+            }
+        """
+        inactive_style = """
+            QPushButton {
+                background-color: rgba(255, 255, 255, 0.02);
+                color: #94a3b8;
+                border: 1px solid rgba(255, 255, 255, 0.06);
+                border-radius: 10px;
+                font-size: 12px;
+                font-weight: 500;
+                font-family: 'Outfit', 'Segoe UI';
+                text-align: left;
+                padding-left: 14px;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.04);
+                color: #cbd5e1;
+            }
+        """
         if mode == "file":
-            self.source_stack.setCurrentIndex(0)
-            self.btn_toggle_file.setStyleSheet("""
-                QPushButton {
-                    background-color: #1c2b3c;
-                    color: #38bdf8;
-                    border: none;
-                    border-radius: 6px;
-                    padding: 4px 10px;
-                    font-size: 12px;
-                    font-weight: 600;
-                    font-family: 'Segoe UI', 'Inter';
-                }
-            """)
-            self.btn_toggle_url.setStyleSheet("""
-                QPushButton {
-                    background-color: transparent;
-                    color: #87929a;
-                    border: none;
-                    border-radius: 6px;
-                    padding: 4px 10px;
-                    font-size: 12px;
-                    font-weight: 500;
-                    font-family: 'Segoe UI', 'Inter';
-                }
-                QPushButton:hover {
-                    color: #ffffff;
-                }
-            """)
+            self.payload_stack.setCurrentIndex(0)
+            self.btn_radio_file.setStyleSheet(active_style)
+            self.btn_radio_file.setText("● Upload XML / JSON / CSV File")
+            self.btn_radio_url.setStyleSheet(inactive_style)
+            self.btn_radio_url.setText("○ Remote XML / JSON URL")
         else:
-            self.source_stack.setCurrentIndex(1)
-            self.btn_toggle_url.setStyleSheet("""
-                QPushButton {
-                    background-color: #1c2b3c;
-                    color: #38bdf8;
-                    border: none;
-                    border-radius: 6px;
-                    padding: 4px 10px;
-                    font-size: 12px;
-                    font-weight: 600;
-                    font-family: 'Segoe UI', 'Inter';
-                }
-            """)
-            self.btn_toggle_file.setStyleSheet("""
-                QPushButton {
-                    background-color: transparent;
-                    color: #87929a;
-                    border: none;
-                    border-radius: 6px;
-                    padding: 4px 10px;
-                    font-size: 12px;
-                    font-weight: 500;
-                    font-family: 'Segoe UI', 'Inter';
-                }
-                QPushButton:hover {
-                    color: #ffffff;
-                }
-            """)
+            self.payload_stack.setCurrentIndex(1)
+            self.btn_radio_url.setStyleSheet(active_style)
+            self.btn_radio_url.setText("● Remote XML / JSON URL")
+            self.btn_radio_file.setStyleSheet(inactive_style)
+            self.btn_radio_file.setText("○ Upload XML / JSON / CSV File")
 
     # ── Target Format Pills ──────────────────────────────────────────────────
 
@@ -2021,137 +1756,87 @@ class FeedConverterTab(QWidget):
     def _update_format_pills(self):
         active_style = """
             QPushButton {
-                background-color: #122131;
+                background-color: rgba(99, 102, 241, 0.2);
                 color: #ffffff;
-                border: 2px solid #38bdf8;
-                border-radius: 8px;
+                border: 2px solid #6366f1;
+                border-radius: 10px;
                 font-size: 13px;
                 font-weight: 700;
-                font-family: 'Segoe UI', 'Inter';
+                font-family: 'Space Grotesk', 'Segoe UI';
             }
         """
         inactive_style = """
             QPushButton {
-                background-color: #051424;
-                color: #87929a;
-                border: 1px solid #1c2b3c;
-                border-radius: 8px;
+                background-color: rgba(255, 255, 255, 0.02);
+                color: #94a3b8;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 10px;
                 font-size: 13px;
                 font-weight: 500;
-                font-family: 'Segoe UI', 'Inter';
+                font-family: 'Outfit', 'Segoe UI';
             }
             QPushButton:hover {
-                border-color: #273647;
+                border-color: rgba(255, 255, 255, 0.16);
                 color: #ffffff;
             }
         """
-
         self.pill_xml.setStyleSheet(active_style if self.target_format == "XML" else inactive_style)
-        self.pill_xml.setText("● XML" if self.target_format == "XML" else "XML")
+        self.pill_xml.setText("✓ XML" if self.target_format == "XML" else "XML")
 
         self.pill_json.setStyleSheet(active_style if self.target_format == "JSON" else inactive_style)
-        self.pill_json.setText("● JSON" if self.target_format == "JSON" else "JSON")
+        self.pill_json.setText("✓ JSON" if self.target_format == "JSON" else "JSON")
 
         self.pill_csv.setStyleSheet(active_style if self.target_format == "CSV" else inactive_style)
-        self.pill_csv.setText("● CSV" if self.target_format == "CSV" else "CSV")
+        self.pill_csv.setText("✓ CSV" if self.target_format == "CSV" else "CSV")
 
-    # ── Advanced Parameters Accordion ────────────────────────────────────────
+    # ── File Selection ───────────────────────────────────────────────────────
 
-    def _toggle_accordion(self):
-        is_visible = self.accordion_body.isVisible()
-        self.accordion_body.setVisible(not is_visible)
-        self.accordion_arrow.setText("▲" if not is_visible else "▼")
-
-    def _toggle_accordion_from_header(self):
-        self.accordion_body.setVisible(True)
-        self.accordion_arrow.setText("▲")
-
-    def _update_param_summary(self):
-        indent_txt = self.indent_combo.currentText().split()[0].lower()
-        if "compact" in indent_txt:
-            indent_txt = "minified"
-        elif "tabs" in indent_txt:
-            indent_txt = "tabs"
-        else:
-            indent_txt = f"{indent_txt} spaces"
-
-        delim_txt = self.delim_combo.currentText().split()[0]
-        flat_txt = "flat" if self.chk_flatten.isChecked() else "nested"
-        self.summary_lbl.setText(f"{indent_txt} • {delim_txt} • {flat_txt}")
-
-    # ── Local File Handling ──────────────────────────────────────────────────
-
-    def _on_file_selected(self, path):
-        if not path or not os.path.exists(path):
-            return
-        self.current_input_path = path
-
-        # Read meta
-        name = os.path.basename(path)
-        sz_str = self._format_size(os.path.getsize(path))
-
-        # Detect format
-        fmt = self._detect_format(path)
-
-        # Estimate record count
-        rec_count = self._estimate_records(path, fmt)
-
-        self.file_card.name_lbl.setText(name)
-        self.file_card.tag_lbl.setText(fmt.upper())
-        self.file_card.meta_lbl.setText(f"{sz_str} • ~{rec_count:,} records detected")
-
-        # Auto-recommend alternate target format
-        if fmt.upper() == "XML" and self.target_format == "XML":
-            self.set_target_format("JSON")
-        elif fmt.upper() == "JSON" and self.target_format == "JSON":
-            self.set_target_format("CSV")
-        elif fmt.upper() == "CSV" and self.target_format == "CSV":
-            self.set_target_format("JSON")
-
-        self.dropzone.setVisible(False)
-        self.file_card.setVisible(True)
-
-    def _on_replace_file(self):
+    def _on_browse_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Replace Feed File",
+            "Select Feed File",
             "",
             "Feed Files (*.xml *.json *.csv *.txt);;XML Files (*.xml);;JSON Files (*.json);;CSV Files (*.csv *.txt);;All Files (*.*)"
         )
         if path:
-            self._on_file_selected(path)
+            self.set_local_file(path)
 
-    def _on_remove_file(self):
-        self.current_input_path = None
-        self.file_card.setVisible(False)
-        self.dropzone.setVisible(True)
+    def set_local_file(self, path):
+        if not path or not os.path.exists(path):
+            return
+        self.current_input_path = path
 
-    # ── URL Fetching ─────────────────────────────────────────────────────────
+        name = os.path.basename(path)
+        sz = os.path.getsize(path)
+        sz_str = self._format_size(sz)
+        fmt = self._detect_format(path)
+
+        # Update file input display
+        self.file_path_display.setText(name)
+        self.file_size_display.setText(f"({sz_str})")
+        self.tag_pill.setText(fmt.upper())
+        self.tag_pill.setVisible(True)
+
+        # Switch target format if matching
+        if fmt.upper() == self.target_format:
+            new_target = "JSON" if fmt.upper() != "JSON" else "CSV"
+            self.set_target_format(new_target)
+
+    # ── URL Fetch ────────────────────────────────────────────────────────────
 
     def fetch_from_url(self):
         url = self.url_input.text().strip()
         if not url:
-            self.url_status_lbl.setText("<span style='color:#ef4444;'>Please enter a valid URL.</span>")
+            self.url_hint.setText("<span style='color:#ef4444;'>Please enter a valid URL.</span>")
             return
 
         self.fetch_btn.setEnabled(False)
         self.fetch_btn.setText("Fetching...")
-        self.url_status_lbl.setText(f"<span style='color:#38bdf8;'>Downloading feed from {url}...</span>")
-        self.status_badge.setText("● Fetching...")
-        self.status_badge.setStyleSheet("""
-            QLabel {
-                background-color: rgba(56, 189, 248, 0.12);
-                border: 1px solid rgba(56, 189, 248, 0.3);
-                color: #38bdf8;
-                border-radius: 12px;
-                padding: 3px 10px;
-                font-size: 11px;
-                font-weight: 600;
-            }
-        """)
+        self.url_hint.setText(f"<span style='color:#38bdf8;'>Downloading feed from {url}...</span>")
         QApplication.processEvents()
 
         try:
+            import urllib.request
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
             with urllib.request.urlopen(req, timeout=15) as response:
                 raw_data = response.read()
@@ -2160,8 +1845,7 @@ class FeedConverterTab(QWidget):
                 except UnicodeDecodeError:
                     data = raw_data.decode('latin-1', errors='replace')
 
-            # Save in scratch
-            scratch_dir = os.path.join(WORKSPACE_DIR, "scratch")
+            scratch_dir = os.path.join(r"C:\Users\diqbal\Python\Feed_Workspace\scratch")
             os.makedirs(scratch_dir, exist_ok=True)
 
             ext = ".xml"
@@ -2174,41 +1858,16 @@ class FeedConverterTab(QWidget):
             with open(temp_path, 'w', encoding='utf-8') as f:
                 f.write(data)
 
-            self.url_status_lbl.setText(f"<span style='color:#34d399;'>✓ Successfully fetched {self._format_size(len(raw_data))}</span>")
+            self.url_hint.setText(f"<span style='color:#10b981;'>✓ Successfully fetched {self._format_size(len(raw_data))}</span>")
             self._set_source_mode("file")
-            self._on_file_selected(temp_path)
-
-            self.status_badge.setText("● Ready")
-            self.status_badge.setStyleSheet("""
-                QLabel {
-                    background-color: rgba(34, 201, 144, 0.12);
-                    border: 1px solid rgba(34, 201, 144, 0.3);
-                    color: #34d399;
-                    border-radius: 12px;
-                    padding: 3px 10px;
-                    font-size: 11px;
-                    font-weight: 600;
-                }
-            """)
+            self.set_local_file(temp_path)
         except Exception as e:
-            self.url_status_lbl.setText(f"<span style='color:#ef4444;'>Failed to fetch URL: {str(e)}</span>")
-            self.status_badge.setText("● Error")
-            self.status_badge.setStyleSheet("""
-                QLabel {
-                    background-color: rgba(239, 68, 68, 0.12);
-                    border: 1px solid rgba(239, 68, 68, 0.3);
-                    color: #ef4444;
-                    border-radius: 12px;
-                    padding: 3px 10px;
-                    font-size: 11px;
-                    font-weight: 600;
-                }
-            """)
+            self.url_hint.setText(f"<span style='color:#ef4444;'>Failed to fetch URL: {e}</span>")
         finally:
             self.fetch_btn.setEnabled(True)
             self.fetch_btn.setText("Fetch URL")
 
-    # ── Core Conversion Execution ────────────────────────────────────────────
+    # ── Conversion Execution ─────────────────────────────────────────────────
 
     def run_conversion(self):
         input_path = self.current_input_path
@@ -2220,19 +1879,19 @@ class FeedConverterTab(QWidget):
         src_fmt = self._detect_format(input_path).lower()
 
         if src_fmt == target_fmt:
-            self.telemetry_status.setText(f"<span style='color:#fbbf24;'>Source is already in {target_fmt.upper()} format. Choose a different target format.</span>")
+            self.telemetry_status.setText(f"<span style='color:#fbbf24;'>Source is already in {target_fmt.upper()} format.</span>")
             return
 
         self.convert_btn.setEnabled(False)
         self.convert_btn.setText("Converting...")
-        self.status_badge.setText("● Converting...")
-        self.status_badge.setStyleSheet("""
+        self.status_pill.setText("● Converting...")
+        self.status_pill.setStyleSheet("""
             QLabel {
-                background-color: rgba(56, 189, 248, 0.12);
-                border: 1px solid rgba(56, 189, 248, 0.3);
-                color: #38bdf8;
-                border-radius: 12px;
-                padding: 3px 10px;
+                background-color: rgba(99, 102, 241, 0.15);
+                border: 1px solid rgba(99, 102, 241, 0.4);
+                color: #818cf8;
+                border-radius: 16px;
+                padding: 4px 12px;
                 font-size: 11px;
                 font-weight: 600;
             }
@@ -2246,12 +1905,10 @@ class FeedConverterTab(QWidget):
                 content = f.read()
 
             in_size = os.path.getsize(input_path)
-
-            # Execution parameters
-            indent = self._get_indent_value()
-            delimiter = self._get_delim_value()
+            minify = self.chk_minify.isChecked()
             flatten = self.chk_flatten.isChecked()
-            strip_xml = self.chk_strip_xml.isChecked()
+            indent = None if minify else 2
+            delimiter = ","
 
             output_content = ""
             records_count = 0
@@ -2268,15 +1925,15 @@ class FeedConverterTab(QWidget):
                     output_content, records_count = self.json_to_xml(content, indent)
             elif src_fmt == 'xml':
                 if target_fmt == 'json':
-                    output_content, records_count = self.xml_to_json(content, indent, strip_xml)
+                    output_content, records_count = self.xml_to_json(content, indent)
                 elif target_fmt == 'csv':
-                    json_tmp, _ = self.xml_to_json(content, None, strip_xml)
+                    json_tmp, _ = self.xml_to_json(content, None)
                     output_content, records_count = self.json_to_csv(json_tmp, delimiter, flatten)
 
             t_elapsed = max(0.001, time.perf_counter() - t_start)
             elapsed_ms = int(t_elapsed * 1000)
 
-            # Determine save destination
+            # Save converted file
             dir_name = os.path.dirname(input_path)
             base_name = os.path.splitext(os.path.basename(input_path))[0]
             if base_name == "converter_fetched_feed":
@@ -2291,46 +1948,42 @@ class FeedConverterTab(QWidget):
             self.last_converted_content = output_content
             out_size = len(output_content.encode('utf-8'))
 
-            # Compute Telemetry Metrics
+            # Telemetry Metrics
             mem_mb = max(1, int((in_size + out_size) / (1024 * 1024)))
             throughput = int(records_count / t_elapsed) if records_count > 0 else int(out_size / (t_elapsed * 1024))
             throughput_str = f"{throughput:,} rec/s" if records_count > 0 else f"{throughput:,} KB/s"
 
             delta_pct = ((out_size - in_size) / in_size * 100) if in_size > 0 else 0
             delta_sign = "+" if delta_pct >= 0 else ""
-            delta_str = f"{delta_sign}{delta_pct:.1f}%"
+            delta_str = f"{delta_sign}{delta_pct:.1f}% Delta"
 
-            # Update UI Live Inspector & Header
-            self.preview_title.setText(f"Output Preview: {out_filename} ({self._format_size(out_size)})")
+            # Update Right Card
             self._render_code_preview(output_content, target_fmt, out_filename, records_count)
+            self.output_stack.setCurrentIndex(1)
 
-            # Update Telemetry Bar
-            rec_display = f"{records_count:,} items" if records_count > 0 else f"{self._format_size(out_size)}"
+            # Update Badges
+            self.badge_fmt.setText(f"{src_fmt.upper()} ➔ {target_fmt.upper()}")
+            self.badge_delta.setText(delta_str)
+            self.badges_bar.setVisible(True)
+
+            # Update Telemetry Footer
+            rec_display = f"{records_count:,} items" if records_count > 0 else self._format_size(out_size)
             self.telemetry_status.setText(
-                f"<span style='color:#34d399; font-weight:600;'>✓ Successfully converted {rec_display} in {elapsed_ms}ms</span>"
+                f"<span style='color:#10b981; font-weight:600;'>✓ Successfully converted {rec_display} in {elapsed_ms}ms</span>"
             )
             self.telemetry_metrics.setText(
-                f"Memory: <span style='color:#f8fafc; font-weight:600;'>{mem_mb} MB</span>  •  Throughput: <span style='color:#f8fafc; font-weight:600;'>{throughput_str}</span>  •  Ratio: <span style='color:#38bdf8; font-weight:600;'>{delta_str}</span>"
+                f"Throughput: <span style='color:#f8fafc; font-weight:600;'>{throughput_str}</span>  •  Footprint: <span style='color:#f8fafc; font-weight:600;'>{mem_mb} MB in-memory</span>"
             )
 
-            # Update Output Quick Checks
-            valid_val = self.card_validity.findChild(QLabel, "check_val")
-            if valid_val:
-                valid_val.setText(f"● Valid {target_fmt.upper()}")
-
-            delta_val = self.card_delta.findChild(QLabel, "check_val")
-            if delta_val:
-                delta_val.setText(f"{self._format_size(in_size)} → {self._format_size(out_size)}")
-
-            # Update Header Status Badge
-            self.status_badge.setText("● Converted")
-            self.status_badge.setStyleSheet("""
+            # Update Status Pill
+            self.status_pill.setText("● Converted")
+            self.status_pill.setStyleSheet("""
                 QLabel {
-                    background-color: rgba(34, 201, 144, 0.15);
-                    border: 1px solid rgba(34, 201, 144, 0.4);
-                    color: #34d399;
-                    border-radius: 12px;
-                    padding: 3px 10px;
+                    background-color: rgba(16, 185, 129, 0.15);
+                    border: 1px solid rgba(16, 185, 129, 0.4);
+                    color: #10b981;
+                    border-radius: 16px;
+                    padding: 4px 12px;
                     font-size: 11px;
                     font-weight: 600;
                 }
@@ -2347,41 +2000,40 @@ class FeedConverterTab(QWidget):
                 "timestamp": datetime.datetime.now().strftime("%H:%M:%S")
             })
 
-            # Update session stats in MainWindow
+            # Update session stats
             if hasattr(self.main_window, "total_validations"):
                 self.main_window.total_validations += 1
                 self.main_window.successful_validations += 1
                 self.main_window.refresh_stats()
 
         except Exception as e:
-            self.telemetry_status.setText(f"<span style='color:#ef4444;'>[Conversion Error] {str(e)}</span>")
-            self.status_badge.setText("● Error")
-            self.status_badge.setStyleSheet("""
+            self.telemetry_status.setText(f"<span style='color:#ef4444;'>[Conversion Error] {e}</span>")
+            self.status_pill.setText("● Error")
+            self.status_pill.setStyleSheet("""
                 QLabel {
                     background-color: rgba(239, 68, 68, 0.12);
                     border: 1px solid rgba(239, 68, 68, 0.3);
                     color: #ef4444;
-                    border-radius: 12px;
-                    padding: 3px 10px;
+                    border-radius: 16px;
+                    padding: 4px 12px;
                     font-size: 11px;
                     font-weight: 600;
                 }
             """)
         finally:
             self.convert_btn.setEnabled(True)
-            self.convert_btn.setText("⚡  Convert Feed")
+            self.convert_btn.setText("▶ Convert Feed")
 
     # ── Syntax Highlighted Preview Rendering ─────────────────────────────────
 
     def _render_code_preview(self, content, fmt, filename, record_count):
-        # Truncate content for smooth UI rendering if huge
         max_preview_len = 16000
         is_truncated = len(content) > max_preview_len
         slice_txt = content[:max_preview_len]
 
-        header_comment = f"// {filename} • Converted to {fmt.upper()} • {record_count:,} items\n"
+        header_comment = f"// {filename} • Output Stream • {record_count:,} items\n"
         if fmt == 'xml':
-            header_comment = f"<!-- {filename} • Converted to {fmt.upper()} • {record_count:,} items -->\n"
+            header_comment = f"<!-- {filename} • Output Stream • {record_count:,} items -->\n"
 
         if fmt == 'json':
             def json_replacer(match):
@@ -2392,13 +2044,13 @@ class FeedConverterTab(QWidget):
                 if str_val is not None:
                     esc_str = html.escape(str_val)
                     if colon:
-                        return f'<span style="color:#38bdf8; font-weight:bold;">{esc_str}</span>{colon}'
+                        return f'<span style="color:#22d3ee; font-weight:bold;">{esc_str}</span>{colon}'
                     else:
-                        return f'<span style="color:#34d399;">{esc_str}</span>'
+                        return f'<span style="color:#10b981;">{esc_str}</span>'
                 elif num_val is not None:
-                    return f'<span style="color:#bdc2ff;">{num_val}</span>'
+                    return f'<span style="color:#c084fc;">{num_val}</span>'
                 elif kw_val is not None:
-                    return f'<span style="color:#bdc2ff; font-weight:bold;">{kw_val}</span>'
+                    return f'<span style="color:#fbbf24; font-weight:bold;">{kw_val}</span>'
                 return html.escape(match.group(0))
 
             pattern = re.compile(r'("(?:\\.|[^"\\])*")(\s*:)?|(-?\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|\b(true|false|null)\b')
@@ -2418,11 +2070,11 @@ class FeedConverterTab(QWidget):
                 attr_val = match.group(3)
                 close_b = match.group(4)
                 if tag:
-                    return f'<span style="color:#38bdf8; font-weight:bold;">{html.escape(tag)}</span>'
+                    return f'<span style="color:#22d3ee; font-weight:bold;">{html.escape(tag)}</span>'
                 elif attr_name and attr_val:
-                    return f'<span style="color:#bdc2ff;">{html.escape(attr_name)}</span>=<span style="color:#34d399;">{html.escape(attr_val)}</span>'
+                    return f'<span style="color:#c084fc;">{html.escape(attr_name)}</span>=<span style="color:#10b981;">{html.escape(attr_val)}</span>'
                 elif close_b:
-                    return f'<span style="color:#38bdf8; font-weight:bold;">{html.escape(close_b)}</span>'
+                    return f'<span style="color:#22d3ee; font-weight:bold;">{html.escape(close_b)}</span>'
                 return html.escape(match.group(0))
 
             pattern = re.compile(r'(</?[\w:\-]+)|([\w:\-]+)=("[^"]*")|(/?>)')
@@ -2439,7 +2091,7 @@ class FeedConverterTab(QWidget):
             esc_raw = html.escape(slice_txt)
             lines = esc_raw.split('\n')
             if lines:
-                lines[0] = f'<span style="color:#38bdf8; font-weight:bold;">{lines[0]}</span>'
+                lines[0] = f'<span style="color:#22d3ee; font-weight:bold;">{lines[0]}</span>'
                 for i in range(1, len(lines)):
                     lines[i] = f'<span style="color:#f8fafc;">{lines[i]}</span>'
                 esc = '\n'.join(lines)
@@ -2450,18 +2102,18 @@ class FeedConverterTab(QWidget):
 
         truncation_html = ""
         if is_truncated:
-            truncation_html = f"<div style='margin-top:12px; color:#87929a; font-style:italic;'>// ... Remaining records truncated in viewport. Full file saved to disk.</div>"
+            truncation_html = f"<div style='margin-top:12px; color:#94a3b8; font-style:italic;'>// ... Remaining records truncated in viewport. Full file saved to disk.</div>"
 
         html_body = f"""
-        <div style="font-family:'Consolas', 'JetBrains Mono', monospace; font-size:12px; line-height:1.6; color:#94a3b8; background-color:#051424;">
-            <div style="color:#87929a; font-style:italic; margin-bottom:8px;">{html.escape(header_comment)}</div>
+        <div style="font-family:'JetBrains Mono', 'Consolas', monospace; font-size:12px; line-height:1.6; color:#94a3b8; background-color:#070a13;">
+            <div style="color:#64748b; font-style:italic; margin-bottom:8px;">{html.escape(header_comment)}</div>
             <pre style="margin:0; white-space:pre-wrap; word-break:break-all;">{esc}</pre>
             {truncation_html}
         </div>
         """
         self.preview_viewer.setHtml(html_body)
 
-    # ── Output Actions ───────────────────────────────────────────────────────
+    # ── Toolbar Actions ──────────────────────────────────────────────────────
 
     def copy_preview(self):
         if not self.last_converted_content:
@@ -2469,38 +2121,7 @@ class FeedConverterTab(QWidget):
         clipboard = QApplication.clipboard()
         clipboard.setText(self.last_converted_content)
         self.copy_btn.setText("✓ Copied!")
-        self.copy_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #122131;
-                color: #38bdf8;
-                border: 1px solid #38bdf8;
-                border-radius: 6px;
-                padding: 5px 10px;
-                font-size: 11px;
-                font-weight: 600;
-            }
-        """)
-        QTimer.singleShot(1800, self._restore_copy_btn)
-
-    def _restore_copy_btn(self):
-        self.copy_btn.setText("📋 Copy")
-        self.copy_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0d1c2d;
-                color: #d4e4fa;
-                border: 1px solid #1c2b3c;
-                border-radius: 6px;
-                padding: 5px 10px;
-                font-size: 11px;
-                font-weight: 500;
-                font-family: 'Segoe UI', 'Inter';
-            }
-            QPushButton:hover {
-                background-color: #122131;
-                border-color: #273647;
-                color: #ffffff;
-            }
-        """)
+        QTimer.singleShot(1800, lambda: self.copy_btn.setText("📋 Copy"))
 
     def download_output(self):
         if not self.last_converted_path or not os.path.exists(self.last_converted_path):
@@ -2517,26 +2138,23 @@ class FeedConverterTab(QWidget):
             try:
                 import shutil
                 shutil.copy2(self.last_converted_path, dest)
-                self.telemetry_status.setText(f"<span style='color:#34d399;'>✓ File saved to {os.path.basename(dest)}</span>")
+                self.telemetry_status.setText(f"<span style='color:#10b981;'>✓ File saved to {os.path.basename(dest)}</span>")
             except Exception as e:
                 self.telemetry_status.setText(f"<span style='color:#ef4444;'>Failed to save file: {e}</span>")
 
     def analyze_in_workspace(self):
-        """Copies output file to Feed_analyzer uploads and switches tab to Feed Analyzer."""
         if not self.last_converted_path or not os.path.exists(self.last_converted_path):
             self.telemetry_status.setText("<span style='color:#ef4444;'>No converted file to analyze. Convert a feed first.</span>")
             return
 
         try:
-            # Copy to Feed_analyzer/uploads/
-            uploads_dir = os.path.join(WORKSPACE_DIR, "Feed_analyzer", "uploads")
+            uploads_dir = os.path.join(r"C:\Users\diqbal\Python\Feed_Workspace\Feed_analyzer\uploads")
             os.makedirs(uploads_dir, exist_ok=True)
             import shutil
             shutil.copy2(self.last_converted_path, os.path.join(uploads_dir, os.path.basename(self.last_converted_path)))
         except Exception as e:
-            logger.warning(f"Failed to copy to Feed Analyzer uploads: {e}")
+            print(f"Failed to copy to Feed Analyzer uploads: {e}")
 
-        # Switch to Feed Analyzer tab (Tab index 1)
         if hasattr(self.main_window, "nav_group"):
             btn = self.main_window.nav_group.button(1)
             if btn:
@@ -2545,38 +2163,34 @@ class FeedConverterTab(QWidget):
             self.main_window._on_nav_clicked(1)
 
     def _show_history_menu(self):
-        if not self.history:
-            menu = QMenu(self)
-            menu.setStyleSheet("QMenu { background-color: #0d1c2d; color: #87929a; border: 1px solid #1c2b3c; padding: 6px; }")
-            menu.addAction("No recent conversions")
-            menu.exec(self.history_btn.mapToGlobal(QPoint(0, self.history_btn.height() + 4)))
-            return
-
         menu = QMenu(self)
         menu.setStyleSheet("""
             QMenu {
-                background-color: #0d1c2d;
+                background-color: #111827;
                 color: #f8fafc;
-                border: 1px solid #1c2b3c;
+                border: 1px solid rgba(255, 255, 255, 0.1);
                 border-radius: 8px;
                 padding: 6px;
                 font-size: 12px;
-                font-family: 'Segoe UI', 'Inter';
+                font-family: 'Outfit', 'Segoe UI';
             }
             QMenu::item {
                 padding: 6px 14px;
                 border-radius: 4px;
             }
             QMenu::item:selected {
-                background-color: #1c2b3c;
-                color: #38bdf8;
+                background-color: rgba(99, 102, 241, 0.2);
+                color: #818cf8;
             }
         """)
 
-        for item in self.history[:8]:
-            action_text = f"{item['name']} ({item['out_fmt']}) • {item['timestamp']}"
-            act = menu.addAction(action_text)
-            act.triggered.connect(lambda checked=False, p=item['path']: self._reload_history_item(p))
+        if not self.history:
+            menu.addAction("No recent conversions")
+        else:
+            for item in self.history[:8]:
+                action_text = f"{item['name']} ({item['out_fmt']}) • {item['timestamp']}"
+                act = menu.addAction(action_text)
+                act.triggered.connect(lambda checked=False, p=item['path']: self._reload_history_item(p))
 
         menu.exec(self.history_btn.mapToGlobal(QPoint(0, self.history_btn.height() + 4)))
 
@@ -2588,82 +2202,44 @@ class FeedConverterTab(QWidget):
                     content = f.read()
                 self.last_converted_content = content
                 fmt = os.path.splitext(path)[1].replace('.', '')
-                self.preview_title.setText(f"Output Preview: {os.path.basename(path)} ({self._format_size(os.path.getsize(path))})")
                 self._render_code_preview(content, fmt, os.path.basename(path), 0)
-                self.telemetry_status.setText(f"<span style='color:#34d399;'>Loaded history file: {os.path.basename(path)}</span>")
+                self.output_stack.setCurrentIndex(1)
+                self.badges_bar.setVisible(True)
+                self.telemetry_status.setText(f"<span style='color:#10b981;'>Loaded history file: {os.path.basename(path)}</span>")
             except Exception as e:
                 self.telemetry_status.setText(f"<span style='color:#ef4444;'>Failed to read history item: {e}</span>")
 
-    # ── Reset & Clean Up ─────────────────────────────────────────────────────
-
     def reset_tab(self):
-        """Resets inputs, dropzone, code viewer, telemetry, and purges temporary converter scratch files."""
-        self._on_remove_file()
+        self.current_input_path = None
+        self.file_path_display.clear()
+        self.file_size_display.clear()
+        self.tag_pill.setVisible(False)
         self.url_input.clear()
-        self.url_status_lbl.setText("Fetch remote XML, JSON, or CSV feeds directly into memory.")
+        self.url_hint.setText("Directly streams HTTP/HTTPS XML/JSON endpoints into memory.")
         self.preview_viewer.clear()
-        self.preview_viewer.setPlaceholderText(
-            "// Live Output Inspector\n// Select a feed file or URL and click 'Convert Feed' to preview syntax-highlighted data."
-        )
-        self.preview_title.setText("Output Preview: (No feed converted yet)")
+        self.output_stack.setCurrentIndex(0)
+        self.badges_bar.setVisible(False)
         self.telemetry_status.setText("Tab state reset to idle.")
-        self.telemetry_metrics.setText("Memory: — • Throughput: — • Ratio: —")
-
-        valid_val = self.card_validity.findChild(QLabel, "check_val")
-        if valid_val: valid_val.setText("● Ready")
-        delta_val = self.card_delta.findChild(QLabel, "check_val")
-        if delta_val: delta_val.setText("0.0 MB → 0.0 MB")
-
-        self.status_badge.setText("● Ready")
-        self.status_badge.setStyleSheet("""
+        self.telemetry_metrics.setText("Throughput: — • Footprint: —")
+        self.status_pill.setText("● Ready")
+        self.status_pill.setStyleSheet("""
             QLabel {
-                background-color: rgba(34, 201, 144, 0.12);
-                border: 1px solid rgba(34, 201, 144, 0.3);
-                color: #34d399;
-                border-radius: 12px;
-                padding: 3px 10px;
+                background-color: rgba(16, 185, 129, 0.12);
+                border: 1px solid rgba(16, 185, 129, 0.3);
+                color: #10b981;
+                border-radius: 16px;
+                padding: 4px 12px;
                 font-size: 11px;
                 font-weight: 600;
             }
         """)
 
-        # Purge temporary converter downloads
-        try:
-            for fname in ["converter_fetched_feed.xml", "converter_fetched_feed.json", "converter_fetched_feed.csv"]:
-                p = os.path.join(WORKSPACE_DIR, "scratch", fname)
-                if os.path.isfile(p):
-                    os.remove(p)
-        except Exception as e:
-            logger.warning(f"Could not remove converter scratch files: {e}")
+    # ── Helpers ──────────────────────────────────────────────────────────────
 
-    # ── Backwards Compatible Method Aliases ──────────────────────────────────
-
-    def open_output_folder(self):
-        if self.last_converted_path and os.path.exists(self.last_converted_path):
-            folder = os.path.dirname(self.last_converted_path)
-            os.startfile(folder)
-
-    def open_output_file(self):
-        if self.last_converted_path and os.path.exists(self.last_converted_path):
-            os.startfile(self.last_converted_path)
-
-    # ── Format Conversion Helpers ────────────────────────────────────────────
-
-    def _get_indent_value(self):
-        txt = self.indent_combo.currentText()
-        if "2 Spaces" in txt: return 2
-        elif "4 Spaces" in txt: return 4
-        elif "Compact" in txt: return None
-        elif "Tabs" in txt: return "\t"
-        return 2
-
-    def _get_delim_value(self):
-        txt = self.delim_combo.currentText()
-        if "Comma" in txt: return ","
-        elif "Semicolon" in txt: return ";"
-        elif "Tab" in txt: return "\t"
-        elif "Pipe" in txt: return "|"
-        return ","
+    def _format_size(self, sz):
+        if sz < 1024: return f"{sz} B"
+        elif sz < 1024 * 1024: return f"{sz / 1024:.1f} KB"
+        else: return f"{sz / (1024 * 1024):.1f} MB"
 
     def _detect_format(self, path):
         low = path.lower()
@@ -2679,38 +2255,10 @@ class FeedConverterTab(QWidget):
         except:
             return 'xml'
 
-    def _estimate_records(self, path, fmt):
-        try:
-            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-                sample = f.read(65536)
-            if fmt == 'json':
-                data = json.loads(sample) if len(sample) < 65536 else None
-                if isinstance(data, list): return len(data)
-                if isinstance(data, dict):
-                    for v in data.values():
-                        if isinstance(v, list): return len(v)
-            elif fmt == 'csv':
-                return max(1, sample.count('\n'))
-            elif fmt == 'xml':
-                # Count common tag repetitions like <item, <job, <record
-                for tag in ['<item', '<job', '<record', '<entry', '<row']:
-                    c = sample.count(tag)
-                    if c > 0: return c
-            sz = os.path.getsize(path)
-            return max(1, int(sz / 250))
-        except:
-            return 1
-
-    def _format_size(self, sz):
-        if sz < 1024: return f"{sz} B"
-        elif sz < 1024 * 1024: return f"{sz / 1024:.1f} KB"
-        else: return f"{sz / (1024 * 1024):.1f} MB"
-
-    def xml_to_json(self, xml_str, indent=2, strip_attribs=False):
-        import xml.etree.ElementTree as ET
+    def xml_to_json(self, xml_str, indent=2):
         def elem_to_dict(elem):
             children = list(elem)
-            d = {elem.tag: {} if (elem.attrib and not strip_attribs) else None}
+            d = {elem.tag: {} if elem.attrib else None}
             if children:
                 dd = {}
                 for dc in map(elem_to_dict, children):
@@ -2722,13 +2270,13 @@ class FeedConverterTab(QWidget):
                         else:
                             dd[k] = v
                 d[elem.tag] = dd
-            if not strip_attribs and elem.attrib:
+            if elem.attrib:
                 if d[elem.tag] is None:
                     d[elem.tag] = {}
                 d[elem.tag].update(('@' + k, v) for k, v in elem.attrib.items())
             if elem.text:
                 text = elem.text.strip()
-                if children or (not strip_attribs and elem.attrib):
+                if children or elem.attrib:
                     if text:
                         if d[elem.tag] is None:
                             d[elem.tag] = {}
@@ -2745,11 +2293,9 @@ class FeedConverterTab(QWidget):
             json_res = json.dumps(tree_dict, separators=(',', ':'), ensure_ascii=False)
         else:
             json_res = json.dumps(tree_dict, indent=indent, ensure_ascii=False)
-
         return json_res, records_count
 
     def json_to_xml(self, json_str, indent=2):
-        import xml.etree.ElementTree as ET
         data = json.loads(json_str)
 
         def build_xml(tag, d):
@@ -2790,9 +2336,8 @@ class FeedConverterTab(QWidget):
             root = ET.Element("feed")
             root.text = str(data)
 
-        # XML pretty formatting
         if hasattr(ET, "indent") and indent:
-            indent_space = "  " if indent == 2 else ("    " if indent == 4 else "\t")
+            indent_space = "  " if indent == 2 else "\t"
             ET.indent(root, space=indent_space)
 
         xml_res = ET.tostring(root, encoding="utf-8").decode("utf-8")
@@ -2809,7 +2354,6 @@ class FeedConverterTab(QWidget):
         return json_res, records_count
 
     def csv_to_xml(self, csv_str, indent=2, delimiter=','):
-        import xml.etree.ElementTree as ET
         reader = csv.DictReader(io.StringIO(csv_str), delimiter=delimiter)
         root = ET.Element("feed")
         records_count = 0
@@ -2823,7 +2367,7 @@ class FeedConverterTab(QWidget):
                 sub.text = str(v) if v is not None else ""
 
         if hasattr(ET, "indent") and indent:
-            indent_space = "  " if indent == 2 else ("    " if indent == 4 else "\t")
+            indent_space = "  " if indent == 2 else "\t"
             ET.indent(root, space=indent_space)
 
         return ET.tostring(root, encoding="utf-8").decode("utf-8"), records_count
@@ -2848,7 +2392,6 @@ class FeedConverterTab(QWidget):
         data = json.loads(json_str)
         if not isinstance(data, list):
             if isinstance(data, dict):
-                # Search for first list in dict values (e.g. "entities", "items", "jobs")
                 for v in data.values():
                     if isinstance(v, list):
                         data = v
@@ -2861,7 +2404,6 @@ class FeedConverterTab(QWidget):
         if not data:
             return "", 0
 
-        # Collect keys across items
         all_rows = []
         keys = []
         for item in data:
