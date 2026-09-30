@@ -678,7 +678,7 @@ class StatCard(QFrame):
 
 
 class ModernToolCard(QFrame):
-    """High-density developer tool card matching the Midnight Telemetry theme."""
+    """High-density developer tool card with crisp typography matching Windows ClearType."""
     def __init__(self, title, desc, tab_index, version, badges, color_theme, secondary_action_label, main_window=None, parent=None):
         super().__init__(parent)
         self.tab_index = tab_index
@@ -691,10 +691,10 @@ class ModernToolCard(QFrame):
         self.setObjectName("modern_tool_card")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Preferred)
-        self.setMinimumHeight(240)
+        self.setMinimumHeight(245)
 
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(22, 20, 22, 18)
+        lay.setContentsMargins(24, 22, 24, 20)
         lay.setSpacing(12)
 
         # ── Top Row: Glowing Icon + Version Pill ──
@@ -702,7 +702,7 @@ class ModernToolCard(QFrame):
         top_row.setSpacing(12)
 
         self.icon_box = QLabel(self.theme["icon"], self)
-        self.icon_box.setFixedSize(44, 44)
+        self.icon_box.setFixedSize(46, 46)
         self.icon_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.icon_box.setStyleSheet(f"""
             QLabel {{
@@ -710,7 +710,7 @@ class ModernToolCard(QFrame):
                 border: 1px solid {self.theme["border"]};
                 border-radius: 12px;
                 color: {self.theme["color"]};
-                font-size: 20px;
+                font-size: 22px;
                 font-weight: bold;
             }}
         """)
@@ -720,13 +720,13 @@ class ModernToolCard(QFrame):
         ver_pill = QLabel(version, self)
         ver_pill.setStyleSheet("""
             QLabel {
-                background-color: rgba(255, 255, 255, 0.05);
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                color: #94a3b8;
+                background-color: rgba(255, 255, 255, 0.06);
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                color: #cbd5e1;
                 border-radius: 6px;
-                padding: 2px 8px;
-                font-size: 11px;
-                font-family: 'JetBrains Mono', monospace;
+                padding: 3px 9px;
+                font-size: 11.5px;
+                font-family: 'Consolas';
                 font-weight: 600;
             }
         """)
@@ -735,21 +735,21 @@ class ModernToolCard(QFrame):
 
         # ── Title & Description ──
         content_col = QVBoxLayout()
-        content_col.setSpacing(4)
+        content_col.setSpacing(5)
 
         self.title_lbl = QLabel(title, self)
-        self.title_lbl.setStyleSheet("color: #f8fafc; font-size: 17px; font-weight: 700; font-family: 'Space Grotesk', 'Segoe UI'; background: transparent;")
+        self.title_lbl.setStyleSheet("color: #f8fafc; font-size: 19px; font-weight: 700; font-family: 'Segoe UI'; background: transparent;")
         content_col.addWidget(self.title_lbl)
 
         desc_lbl = QLabel(desc, self)
         desc_lbl.setWordWrap(True)
-        desc_lbl.setStyleSheet("color: #94a3b8; font-size: 12px; line-height: 17px; font-family: 'Outfit', 'Segoe UI'; background: transparent;")
+        desc_lbl.setStyleSheet("color: #94a3b8; font-size: 13.5px; line-height: 20px; font-family: 'Segoe UI'; background: transparent;")
         content_col.addWidget(desc_lbl)
         lay.addLayout(content_col)
 
         # ── Feature Badges ──
         badges_row = QHBoxLayout()
-        badges_row.setSpacing(6)
+        badges_row.setSpacing(8)
         for i, b in enumerate(badges):
             b_lbl = QLabel(b, self)
             if i == 0:
@@ -758,24 +758,24 @@ class ModernToolCard(QFrame):
                         background-color: {self.theme["bg"]};
                         border: 1px solid {self.theme["border"]};
                         color: {self.theme["color"]};
-                        border-radius: 12px;
-                        padding: 3px 9px;
-                        font-size: 10px;
+                        border-radius: 10px;
+                        padding: 4px 10px;
+                        font-size: 11.5px;
                         font-weight: 600;
-                        font-family: 'Space Grotesk', 'Segoe UI';
+                        font-family: 'Segoe UI';
                     }}
                 """)
             else:
                 b_lbl.setStyleSheet("""
                     QLabel {
-                        background-color: rgba(255, 255, 255, 0.04);
-                        border: 1px solid rgba(255, 255, 255, 0.08);
+                        background-color: rgba(255, 255, 255, 0.05);
+                        border: 1px solid rgba(255, 255, 255, 0.1);
                         color: #94a3b8;
-                        border-radius: 12px;
-                        padding: 3px 9px;
-                        font-size: 10px;
+                        border-radius: 10px;
+                        padding: 4px 10px;
+                        font-size: 11.5px;
                         font-weight: 500;
-                        font-family: 'Space Grotesk', 'Segoe UI';
+                        font-family: 'Segoe UI';
                     }
                 """)
             badges_row.addWidget(b_lbl)
@@ -786,28 +786,28 @@ class ModernToolCard(QFrame):
 
         # ── Action Buttons Footer ──
         footer = QFrame(self)
-        footer.setStyleSheet("background: transparent; border-top: 1px solid rgba(255, 255, 255, 0.06); padding-top: 12px;")
+        footer.setStyleSheet("background: transparent; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 14px;")
         f_lay = QHBoxLayout(footer)
         f_lay.setContentsMargins(0, 0, 0, 0)
-        f_lay.setSpacing(8)
+        f_lay.setSpacing(10)
 
         self.sec_btn = QPushButton(secondary_action_label, footer)
         self.sec_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.sec_btn.setFixedHeight(32)
+        self.sec_btn.setFixedHeight(34)
         self.sec_btn.setStyleSheet("""
             QPushButton {
-                background-color: rgba(255, 255, 255, 0.04);
-                border: 1px solid rgba(255, 255, 255, 0.08);
+                background-color: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.12);
                 color: #cbd5e1;
                 border-radius: 8px;
-                padding: 0 12px;
-                font-size: 11px;
+                padding: 0 14px;
+                font-size: 12.5px;
                 font-weight: 600;
-                font-family: 'Space Grotesk', 'Segoe UI';
+                font-family: 'Segoe UI';
             }
             QPushButton:hover {
-                background-color: rgba(255, 255, 255, 0.08);
-                border-color: rgba(255, 255, 255, 0.16);
+                background-color: rgba(255, 255, 255, 0.1);
+                border-color: rgba(255, 255, 255, 0.2);
                 color: #ffffff;
             }
         """)
@@ -818,17 +818,17 @@ class ModernToolCard(QFrame):
 
         self.launch_btn = QPushButton("Launch Tool →", footer)
         self.launch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.launch_btn.setFixedHeight(32)
+        self.launch_btn.setFixedHeight(34)
         self.launch_btn.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4f46e5, stop:1 #6366f1);
                 color: #ffffff;
                 border: none;
                 border-radius: 8px;
-                padding: 0 14px;
-                font-size: 11px;
+                padding: 0 16px;
+                font-size: 12.5px;
                 font-weight: 700;
-                font-family: 'Space Grotesk', 'Segoe UI';
+                font-family: 'Segoe UI';
             }
             QPushButton:hover {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338ca, stop:1 #4f46e5);
@@ -854,7 +854,7 @@ class ModernToolCard(QFrame):
         self.setStyleSheet(f"""
             QFrame#modern_tool_card {{
                 background-color: rgba(24, 33, 53, 0.98);
-                border: 1px solid rgba({self.theme["rgb"]}, 0.45);
+                border: 1px solid rgba({self.theme["rgb"]}, 0.50);
                 border-radius: 16px;
             }}
         """)
@@ -899,20 +899,20 @@ class InstantDropzoneCard(QFrame):
         self.setObjectName("dropzone_card")
         self.setAcceptDrops(True)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Preferred)
-        self.setMinimumHeight(240)
+        self.setMinimumHeight(245)
 
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(22, 20, 22, 18)
-        lay.setSpacing(10)
+        lay.setContentsMargins(24, 22, 24, 20)
+        lay.setSpacing(12)
 
         # Header
         top_row = QHBoxLayout()
         dot = QLabel("●", self)
-        dot.setStyleSheet("color: #38bdf8; font-size: 13px; background: transparent;")
+        dot.setStyleSheet("color: #38bdf8; font-size: 14px; background: transparent;")
         top_row.addWidget(dot)
 
         title = QLabel("Instant Dropzone & Recents", self)
-        title.setStyleSheet("color: #f8fafc; font-size: 16px; font-weight: 700; font-family: 'Space Grotesk', 'Segoe UI'; background: transparent;")
+        title.setStyleSheet("color: #f8fafc; font-size: 18px; font-weight: 700; font-family: 'Segoe UI'; background: transparent;")
         top_row.addWidget(title)
         top_row.addStretch()
 
@@ -920,12 +920,12 @@ class InstantDropzoneCard(QFrame):
         auto_pill.setStyleSheet("""
             QLabel {
                 background-color: rgba(56, 189, 248, 0.15);
-                border: 1px solid rgba(56, 189, 248, 0.3);
+                border: 1px solid rgba(56, 189, 248, 0.35);
                 color: #38bdf8;
                 border-radius: 6px;
-                padding: 2px 7px;
-                font-size: 10px;
-                font-family: 'JetBrains Mono', monospace;
+                padding: 3px 8px;
+                font-size: 11px;
+                font-family: 'Consolas';
                 font-weight: 600;
             }
         """)
@@ -937,36 +937,36 @@ class InstantDropzoneCard(QFrame):
         self.drop_target.setCursor(Qt.CursorShape.PointingHandCursor)
         self.drop_target.setStyleSheet("""
             QFrame {
-                border: 1.5px dashed rgba(56, 189, 248, 0.35);
+                border: 1.5px dashed rgba(56, 189, 248, 0.4);
                 border-radius: 10px;
-                background-color: rgba(8, 12, 20, 0.6);
-                padding: 8px;
+                background-color: rgba(8, 12, 20, 0.7);
+                padding: 10px;
             }
             QFrame:hover {
                 border-color: #38bdf8;
-                background-color: rgba(56, 189, 248, 0.05);
+                background-color: rgba(56, 189, 248, 0.08);
             }
         """)
         dt_lay = QVBoxLayout(self.drop_target)
         dt_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        dt_lay.setSpacing(3)
+        dt_lay.setSpacing(4)
 
         icon_lbl = QLabel("☁", self.drop_target)
-        icon_lbl.setStyleSheet("color: #38bdf8; font-size: 18px; background: transparent;")
+        icon_lbl.setStyleSheet("color: #38bdf8; font-size: 20px; background: transparent;")
         icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         dt_lay.addWidget(icon_lbl)
 
         prompt_lbl = QLabel("Drop feed here to auto-detect and run", self.drop_target)
-        prompt_lbl.setStyleSheet("color: #f8fafc; font-size: 11px; font-weight: 600; font-family: 'Space Grotesk', 'Segoe UI'; background: transparent;")
+        prompt_lbl.setStyleSheet("color: #f8fafc; font-size: 12.5px; font-weight: 600; font-family: 'Segoe UI'; background: transparent;")
         prompt_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         dt_lay.addWidget(prompt_lbl)
 
         pills_row = QHBoxLayout()
         pills_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        pills_row.setSpacing(6)
+        pills_row.setSpacing(8)
         for tag in ["XML", "JSON", "CSV"]:
             p = QLabel(tag, self.drop_target)
-            p.setStyleSheet("background: rgba(255, 255, 255, 0.05); color: #94a3b8; border-radius: 4px; padding: 1px 6px; font-size: 9px; font-family: 'JetBrains Mono';")
+            p.setStyleSheet("background: rgba(255, 255, 255, 0.08); color: #cbd5e1; border-radius: 4px; padding: 2px 7px; font-size: 10.5px; font-family: 'Consolas'; font-weight: 600;")
             pills_row.addWidget(p)
         dt_lay.addLayout(pills_row)
 
@@ -975,7 +975,7 @@ class InstantDropzoneCard(QFrame):
 
         # Compact Recents List
         rec_lay = QVBoxLayout()
-        rec_lay.setSpacing(5)
+        rec_lay.setSpacing(6)
 
         recents = [
             ("catalog_2026.xml", "48.2 MB · 14.2k recs", "XML", "#fbbf24", "Run SIMD", 5),
@@ -985,38 +985,38 @@ class InstantDropzoneCard(QFrame):
 
         for name, meta, fmt, color, action_text, target_idx in recents:
             row = QFrame(self)
-            row.setStyleSheet("background: rgba(8, 12, 20, 0.6); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 8px; padding: 4px 8px;")
+            row.setStyleSheet("background: rgba(8, 12, 20, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 6px 10px;")
             rl = QHBoxLayout(row)
             rl.setContentsMargins(0, 0, 0, 0)
-            rl.setSpacing(8)
+            rl.setSpacing(10)
 
             tag_pill = QLabel(fmt, row)
-            tag_pill.setStyleSheet(f"background: rgba(255, 255, 255, 0.05); color: {color}; font-size: 9px; font-weight: bold; border-radius: 4px; padding: 1px 5px; font-family: 'JetBrains Mono';")
+            tag_pill.setStyleSheet(f"background: rgba(255, 255, 255, 0.06); color: {color}; font-size: 10.5px; font-weight: bold; border-radius: 4px; padding: 2px 6px; font-family: 'Consolas';")
             rl.addWidget(tag_pill)
 
             info_col = QVBoxLayout()
-            info_col.setSpacing(0)
+            info_col.setSpacing(1)
             nl = QLabel(name, row)
-            nl.setStyleSheet("color: #f8fafc; font-size: 11px; font-weight: 600; font-family: 'Outfit'; background: transparent;")
+            nl.setStyleSheet("color: #f8fafc; font-size: 13px; font-weight: 600; font-family: 'Segoe UI'; background: transparent;")
             info_col.addWidget(nl)
             ml = QLabel(meta, row)
-            ml.setStyleSheet("color: #64748b; font-size: 10px; font-family: 'JetBrains Mono'; background: transparent;")
+            ml.setStyleSheet("color: #94a3b8; font-size: 11.5px; font-family: 'Consolas'; background: transparent;")
             info_col.addWidget(ml)
             rl.addLayout(info_col, 1)
 
             btn = QPushButton(action_text, row)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setFixedHeight(24)
+            btn.setFixedHeight(28)
             btn.setStyleSheet("""
                 QPushButton {
-                    background: rgba(255, 255, 255, 0.05);
+                    background: rgba(255, 255, 255, 0.06);
                     color: #cbd5e1;
-                    border: 1px solid rgba(255, 255, 255, 0.08);
-                    border-radius: 5px;
-                    padding: 0 8px;
-                    font-size: 10px;
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 6px;
+                    padding: 0 12px;
+                    font-size: 11.5px;
                     font-weight: 600;
-                    font-family: 'Space Grotesk';
+                    font-family: 'Segoe UI';
                 }
                 QPushButton:hover {
                     background: #4f46e5;
@@ -1076,7 +1076,7 @@ class InstantDropzoneCard(QFrame):
 
 
 class ModernHubPage(QWidget):
-    """The redesigned Feed Workspace Hub command center matching the Midnight Telemetry design."""
+    """The redesigned Feed Workspace Hub command center with crisp, high-clarity typography."""
     def __init__(self, main_window=None, parent=None):
         super().__init__(parent)
         self.main_window = main_window
@@ -1101,7 +1101,7 @@ class ModernHubPage(QWidget):
                 margin: 0px;
             }
             QScrollBar::handle:vertical {
-                background: rgba(255, 255, 255, 0.12);
+                background: rgba(255, 255, 255, 0.15);
                 min-height: 20px;
                 border-radius: 3px;
             }
@@ -1130,12 +1130,12 @@ class ModernHubPage(QWidget):
         # ── 3. Utilities Section Title ──
         util_hdr = QHBoxLayout()
         util_title = QLabel("Feed Engine Workspace Utilities", container)
-        util_title.setStyleSheet("color: #f8fafc; font-size: 18px; font-weight: 700; font-family: 'Space Grotesk', 'Segoe UI'; background: transparent;")
+        util_title.setStyleSheet("color: #f8fafc; font-size: 19px; font-weight: 700; font-family: 'Segoe UI'; background: transparent;")
         util_hdr.addWidget(util_title)
         util_hdr.addStretch()
 
         nodes_ready = QLabel("6 Operational Nodes Ready", container)
-        nodes_ready.setStyleSheet("color: #64748b; font-size: 11px; font-family: 'JetBrains Mono', monospace; background: transparent;")
+        nodes_ready.setStyleSheet("color: #94a3b8; font-size: 12px; font-family: 'Consolas'; font-weight: 600; background: transparent;")
         util_hdr.addWidget(nodes_ready)
         c_lay.addLayout(util_hdr)
 
@@ -1161,14 +1161,14 @@ class ModernHubPage(QWidget):
         badge = QLabel("⚡ High-Throughput Stream Architecture", hdr)
         badge.setStyleSheet("""
             QLabel {
-                background-color: rgba(99, 102, 241, 0.12);
-                border: 1px solid rgba(99, 102, 241, 0.3);
+                background-color: rgba(99, 102, 241, 0.15);
+                border: 1px solid rgba(99, 102, 241, 0.4);
                 color: #818cf8;
                 border-radius: 8px;
-                padding: 5px 12px;
-                font-size: 11px;
+                padding: 6px 14px;
+                font-size: 12px;
                 font-weight: 600;
-                font-family: 'Space Grotesk', 'Segoe UI';
+                font-family: 'Segoe UI';
             }
         """)
         hl.addWidget(badge)
@@ -1181,13 +1181,13 @@ class ModernHubPage(QWidget):
         engine_chip = QLabel("● Engine: Rust-SIMD v4.2 Active", hdr)
         engine_chip.setStyleSheet("""
             QLabel {
-                background-color: rgba(16, 185, 129, 0.1);
-                border: 1px solid rgba(16, 185, 129, 0.3);
+                background-color: rgba(16, 185, 129, 0.12);
+                border: 1px solid rgba(16, 185, 129, 0.35);
                 color: #10b981;
                 border-radius: 8px;
-                padding: 6px 12px;
-                font-size: 11px;
-                font-family: 'JetBrains Mono', monospace;
+                padding: 6px 14px;
+                font-size: 12px;
+                font-family: 'Consolas';
                 font-weight: 600;
             }
         """)
@@ -1196,13 +1196,13 @@ class ModernHubPage(QWidget):
         mem_chip = QLabel("💾 Memory Pool: 128 MB", hdr)
         mem_chip.setStyleSheet("""
             QLabel {
-                background-color: rgba(56, 189, 248, 0.1);
-                border: 1px solid rgba(56, 189, 248, 0.3);
+                background-color: rgba(56, 189, 248, 0.12);
+                border: 1px solid rgba(56, 189, 248, 0.35);
                 color: #38bdf8;
                 border-radius: 8px;
-                padding: 6px 12px;
-                font-size: 11px;
-                font-family: 'JetBrains Mono', monospace;
+                padding: 6px 14px;
+                font-size: 12px;
+                font-family: 'Consolas';
                 font-weight: 600;
             }
         """)
@@ -1211,13 +1211,13 @@ class ModernHubPage(QWidget):
         simd_chip = QLabel("🚀 AVX2 Accelerated", hdr)
         simd_chip.setStyleSheet("""
             QLabel {
-                background-color: rgba(255, 255, 255, 0.04);
-                border: 1px solid rgba(255, 255, 255, 0.08);
+                background-color: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
                 color: #cbd5e1;
                 border-radius: 8px;
-                padding: 6px 12px;
-                font-size: 11px;
-                font-family: 'Space Grotesk', 'Segoe UI';
+                padding: 6px 14px;
+                font-size: 12px;
+                font-family: 'Segoe UI';
                 font-weight: 600;
             }
         """)
@@ -1225,41 +1225,6 @@ class ModernHubPage(QWidget):
 
         hl.addLayout(chips_row)
         return hdr
-
-    def _on_clear_cache(self):
-        self.clear_btn.setText("✓ Cache Cleared")
-        self.clear_btn.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(16, 185, 129, 0.15);
-                border: 1px solid rgba(16, 185, 129, 0.4);
-                color: #10b981;
-                border-radius: 8px;
-                padding: 0 12px;
-                font-size: 11px;
-                font-weight: 600;
-                font-family: 'Space Grotesk', 'Segoe UI';
-            }
-        """)
-        QTimer.singleShot(1500, self._reset_clear_btn)
-
-    def _reset_clear_btn(self):
-        self.clear_btn.setText("Clear Cache")
-        self.clear_btn.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(255, 255, 255, 0.04);
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                color: #cbd5e1;
-                border-radius: 8px;
-                padding: 0 12px;
-                font-size: 11px;
-                font-weight: 600;
-                font-family: 'Space Grotesk', 'Segoe UI';
-            }
-            QPushButton:hover {
-                background-color: rgba(255, 255, 255, 0.08);
-                color: #ffffff;
-            }
-        """)
 
     def _build_hero_section(self):
         hero_card = QFrame(self)
@@ -1287,10 +1252,10 @@ class ModernHubPage(QWidget):
                 border: 1px solid rgba(99, 102, 241, 0.35);
                 color: #818cf8;
                 border-radius: 12px;
-                padding: 3px 12px;
-                font-size: 11px;
+                padding: 4px 12px;
+                font-size: 12px;
                 font-weight: 600;
-                font-family: 'Space Grotesk', 'Segoe UI';
+                font-family: 'Segoe UI';
             }
         """)
         tag_row.addWidget(tag)
@@ -1298,12 +1263,12 @@ class ModernHubPage(QWidget):
         tb.addLayout(tag_row)
 
         h_title = QLabel("Feed Workspace <span style='color: #818cf8;'>Hub</span>", hero_card)
-        h_title.setStyleSheet("color: #f8fafc; font-size: 28px; font-weight: 800; font-family: 'Space Grotesk', 'Segoe UI'; background: transparent;")
+        h_title.setStyleSheet("color: #f8fafc; font-size: 32px; font-weight: 800; font-family: 'Segoe UI'; background: transparent;")
         tb.addWidget(h_title)
 
         h_sub = QLabel("High-performance streaming toolkit for large-scale XML, JSON, and CSV feeds. Built with hardware-accelerated AST parsing and deterministic execution semantics.", hero_card)
         h_sub.setWordWrap(True)
-        h_sub.setStyleSheet("color: #94a3b8; font-size: 13px; line-height: 19px; font-family: 'Outfit', 'Segoe UI'; background: transparent;")
+        h_sub.setStyleSheet("color: #94a3b8; font-size: 14.5px; line-height: 22px; font-family: 'Segoe UI'; background: transparent;")
         tb.addWidget(h_sub)
         hl.addLayout(tb)
 
@@ -1320,28 +1285,28 @@ class ModernHubPage(QWidget):
 
         for title, val, badge_text, badge_color, sub in kpis:
             k_card = QFrame(hero_card)
-            k_card.setStyleSheet("background: rgba(8, 12, 20, 0.6); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; padding: 12px 14px;")
+            k_card.setStyleSheet("background: rgba(8, 12, 20, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 14px 16px;")
             kl = QVBoxLayout(k_card)
             kl.setContentsMargins(0, 0, 0, 0)
-            kl.setSpacing(4)
+            kl.setSpacing(5)
 
             top_k = QHBoxLayout()
             tl = QLabel(title, k_card)
-            tl.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 600; font-family: 'Space Grotesk'; background: transparent;")
+            tl.setStyleSheet("color: #94a3b8; font-size: 12px; font-weight: 600; font-family: 'Segoe UI'; background: transparent;")
             top_k.addWidget(tl)
             top_k.addStretch()
 
             tb_pill = QLabel(badge_text, k_card)
-            tb_pill.setStyleSheet(f"background: rgba(255, 255, 255, 0.05); color: {badge_color}; border: 1px solid {badge_color}40; border-radius: 4px; padding: 1px 6px; font-size: 9px; font-family: 'JetBrains Mono'; font-weight: bold;")
+            tb_pill.setStyleSheet(f"background: rgba(255, 255, 255, 0.06); color: {badge_color}; border: 1px solid {badge_color}50; border-radius: 4px; padding: 2px 7px; font-size: 11px; font-family: 'Consolas'; font-weight: bold;")
             top_k.addWidget(tb_pill)
             kl.addLayout(top_k)
 
             vl = QLabel(val, k_card)
-            vl.setStyleSheet("color: #f8fafc; font-size: 19px; font-weight: 700; font-family: 'Space Grotesk'; background: transparent;")
+            vl.setStyleSheet("color: #f8fafc; font-size: 22px; font-weight: 700; font-family: 'Segoe UI'; background: transparent;")
             kl.addWidget(vl)
 
             sl = QLabel(sub, k_card)
-            sl.setStyleSheet("color: #64748b; font-size: 10px; font-family: 'Outfit'; background: transparent;")
+            sl.setStyleSheet("color: #64748b; font-size: 11.5px; font-family: 'Segoe UI'; background: transparent;")
             kl.addWidget(sl)
 
             kpi_row.addWidget(k_card, 1)
@@ -5217,11 +5182,13 @@ class FeedWorkspace(QMainWindow):
 
 # ── Entry Point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+    QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.RoundPreferFloor)
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    font = QFont("Segoe UI", 14)
+    font = QFont("Segoe UI", 11)
     font.setStyleHint(QFont.StyleHint.SansSerif)
+    font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+    font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
     app.setFont(font)
     workspace = FeedWorkspace()
     workspace.showMaximized()
