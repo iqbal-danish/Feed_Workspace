@@ -677,149 +677,761 @@ class StatCard(QFrame):
         self.val_lbl.setText(new_val)
 
 
-# ── Quick Action Card ─────────────────────────────────────────────────────────
-class QuickActionCard(QFrame):
-    """Clean, modern tool card matching the minimalist mockup design."""
-    CONFIGS = {
-        "Analyzer":        {"color": "#c084fc", "color_rgb": "192, 132, 252", "light": "#e9d5ff", "icon": "🔍"},
-        "Feed Analyzer":   {"color": "#c084fc", "color_rgb": "192, 132, 252", "light": "#e9d5ff", "icon": "🔍"},
-        "Merger":          {"color": "#fbbf24", "color_rgb": "251, 191, 36",  "light": "#fde68a", "icon": "🥞"},
-        "Feed Merger":     {"color": "#fbbf24", "color_rgb": "251, 191, 36",  "light": "#fde68a", "icon": "🥞"},
-        "Validator":       {"color": "#38bdf8", "color_rgb": "56, 189, 248",  "light": "#bae6fd", "icon": "🛡️"},
-        "Feed Validator":  {"color": "#38bdf8", "color_rgb": "56, 189, 248",  "light": "#bae6fd", "icon": "🛡️"},
-        "Builder":         {"color": "#4ade80", "color_rgb": "74, 222, 128",  "light": "#bbf7d0", "icon": "🛠️"},
-        "Feed Builder":    {"color": "#4ade80", "color_rgb": "74, 222, 128",  "light": "#bbf7d0", "icon": "🛠️"},
-        "Converter":       {"color": "#14b8a6", "color_rgb": "20, 184, 166",  "light": "#5eead4", "icon": "🔄"},
-        "Feed Converter":  {"color": "#14b8a6", "color_rgb": "20, 184, 166",  "light": "#5eead4", "icon": "🔄"},
-        "Diff":            {"color": "#f472b6", "color_rgb": "244, 114, 182", "light": "#fbcfe8", "icon": "⚖️"},
-        "Feed Diff":       {"color": "#f472b6", "color_rgb": "244, 114, 182", "light": "#fbcfe8", "icon": "⚖️"},
-        "Downloader":      {"color": "#06b6d4", "color_rgb": "6, 182, 212",   "light": "#a5f3fc", "icon": "⬇️"},
-        "Feed Downloader": {"color": "#06b6d4", "color_rgb": "6, 182, 212",   "light": "#a5f3fc", "icon": "⬇️"},
-    }
-
-    def __init__(self, title, description, tab_index, main_window, parent=None):
+class ModernToolCard(QFrame):
+    """High-density developer tool card matching the Midnight Telemetry theme."""
+    def __init__(self, title, desc, tab_index, version, badges, color_theme, secondary_action_label, main_window=None, parent=None):
         super().__init__(parent)
         self.tab_index = tab_index
         self.main_window = main_window
-        self.cfg = self.CONFIGS.get(title, {"color": "#7c3aed", "color_rgb": "124, 58, 237", "light": "#c084fc", "icon": "⚡"})
+        self.theme = color_theme
+        self.tool_title = title
+        self.tool_desc = desc
+        self.secondary_label = secondary_action_label
 
-        self.setObjectName("quick_card")
+        self.setObjectName("modern_tool_card")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setMinimumHeight(200)
-        self.setMinimumWidth(260)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Preferred)
+        self.setMinimumHeight(240)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(26, 24, 26, 20)
-        layout.setSpacing(14)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(22, 20, 22, 18)
+        lay.setSpacing(12)
 
-        # Top section: Horizontal Icon + Title & Description
+        # ── Top Row: Glowing Icon + Version Pill ──
         top_row = QHBoxLayout()
-        top_row.setSpacing(18)
-        top_row.setAlignment(Qt.AlignmentFlag.AlignTop)
+        top_row.setSpacing(12)
 
-        # Icon Circle
-        self.icon_box = QFrame(self)
-        self.icon_box.setFixedSize(58, 58)
+        self.icon_box = QLabel(self.theme["icon"], self)
+        self.icon_box.setFixedSize(44, 44)
+        self.icon_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.icon_box.setStyleSheet(f"""
-            QFrame {{
-                background-color: rgba({self.cfg['color_rgb']}, 0.12);
-                border: 1px solid rgba({self.cfg['color_rgb']}, 0.30);
-                border-radius: 29px;
+            QLabel {{
+                background-color: {self.theme["bg"]};
+                border: 1px solid {self.theme["border"]};
+                border-radius: 12px;
+                color: {self.theme["color"]};
+                font-size: 20px;
+                font-weight: bold;
             }}
         """)
-        box_lay = QVBoxLayout(self.icon_box)
-        box_lay.setContentsMargins(0, 0, 0, 0)
-        icon_lbl = QLabel(self.cfg["icon"], self.icon_box)
-        icon_lbl.setStyleSheet(f"font-size: 26px; color: {self.cfg['color']}; background: transparent; border: none;")
-        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        box_lay.addWidget(icon_lbl)
         top_row.addWidget(self.icon_box)
+        top_row.addStretch()
 
-        # Text block
-        text_block = QVBoxLayout()
-        text_block.setSpacing(6)
-        self.title_lbl = QLabel(title, self)
-        self.title_lbl.setStyleSheet("font-size: 21px; font-weight: bold; color: #ffffff; font-family: 'Segoe UI', Arial; background: transparent; border: none;")
-        text_block.addWidget(self.title_lbl)
-
-        self.desc_lbl = QLabel(description, self)
-        self.desc_lbl.setWordWrap(True)
-        self.desc_lbl.setStyleSheet("color: #94a3b8; font-size: 13px; line-height: 19px; font-family: 'Segoe UI', Arial; background: transparent; border: none;")
-        text_block.addWidget(self.desc_lbl)
-        top_row.addLayout(text_block, 1)
-
-        layout.addLayout(top_row)
-        layout.addStretch()
-
-        # Bottom row: Launch Tool action button
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-
-        self.launch_btn = QPushButton("Launch Tool  →", self)
-        self.launch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.launch_btn.setFixedHeight(34)
-        self.launch_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: rgba(255, 255, 255, 0.04);
-                border: 1px solid rgba(255, 255, 255, 0.14);
-                border-radius: 8px;
-                color: #cbd5e1;
-                font-size: 12px;
+        ver_pill = QLabel(version, self)
+        ver_pill.setStyleSheet("""
+            QLabel {
+                background-color: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                color: #94a3b8;
+                border-radius: 6px;
+                padding: 2px 8px;
+                font-size: 11px;
+                font-family: 'JetBrains Mono', monospace;
                 font-weight: 600;
-                font-family: 'Segoe UI', Arial;
-                padding: 0 16px;
-            }}
-            QPushButton:hover {{
-                background-color: rgba({self.cfg['color_rgb']}, 0.22);
-                border-color: {self.cfg['color']};
-                color: #ffffff;
-            }}
+            }
         """)
-        self.launch_btn.clicked.connect(self.on_click)
-        btn_row.addWidget(self.launch_btn)
-        layout.addLayout(btn_row)
+        top_row.addWidget(ver_pill)
+        lay.addLayout(top_row)
 
-        self.setStyleSheet(f"""
-            QFrame#quick_card {{
-                background-color: #12141a;
-                border: 1px solid #1e2430;
+        # ── Title & Description ──
+        content_col = QVBoxLayout()
+        content_col.setSpacing(4)
+
+        self.title_lbl = QLabel(title, self)
+        self.title_lbl.setStyleSheet("color: #f8fafc; font-size: 17px; font-weight: 700; font-family: 'Space Grotesk', 'Segoe UI'; background: transparent;")
+        content_col.addWidget(self.title_lbl)
+
+        desc_lbl = QLabel(desc, self)
+        desc_lbl.setWordWrap(True)
+        desc_lbl.setStyleSheet("color: #94a3b8; font-size: 12px; line-height: 17px; font-family: 'Outfit', 'Segoe UI'; background: transparent;")
+        content_col.addWidget(desc_lbl)
+        lay.addLayout(content_col)
+
+        # ── Feature Badges ──
+        badges_row = QHBoxLayout()
+        badges_row.setSpacing(6)
+        for i, b in enumerate(badges):
+            b_lbl = QLabel(b, self)
+            if i == 0:
+                b_lbl.setStyleSheet(f"""
+                    QLabel {{
+                        background-color: {self.theme["bg"]};
+                        border: 1px solid {self.theme["border"]};
+                        color: {self.theme["color"]};
+                        border-radius: 12px;
+                        padding: 3px 9px;
+                        font-size: 10px;
+                        font-weight: 600;
+                        font-family: 'Space Grotesk', 'Segoe UI';
+                    }}
+                """)
+            else:
+                b_lbl.setStyleSheet("""
+                    QLabel {
+                        background-color: rgba(255, 255, 255, 0.04);
+                        border: 1px solid rgba(255, 255, 255, 0.08);
+                        color: #94a3b8;
+                        border-radius: 12px;
+                        padding: 3px 9px;
+                        font-size: 10px;
+                        font-weight: 500;
+                        font-family: 'Space Grotesk', 'Segoe UI';
+                    }
+                """)
+            badges_row.addWidget(b_lbl)
+        badges_row.addStretch()
+        lay.addLayout(badges_row)
+
+        lay.addStretch()
+
+        # ── Action Buttons Footer ──
+        footer = QFrame(self)
+        footer.setStyleSheet("background: transparent; border-top: 1px solid rgba(255, 255, 255, 0.06); padding-top: 12px;")
+        f_lay = QHBoxLayout(footer)
+        f_lay.setContentsMargins(0, 0, 0, 0)
+        f_lay.setSpacing(8)
+
+        self.sec_btn = QPushButton(secondary_action_label, footer)
+        self.sec_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sec_btn.setFixedHeight(32)
+        self.sec_btn.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                color: #cbd5e1;
+                border-radius: 8px;
+                padding: 0 12px;
+                font-size: 11px;
+                font-weight: 600;
+                font-family: 'Space Grotesk', 'Segoe UI';
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.08);
+                border-color: rgba(255, 255, 255, 0.16);
+                color: #ffffff;
+            }
+        """)
+        self.sec_btn.clicked.connect(self._on_secondary_click)
+        f_lay.addWidget(self.sec_btn)
+
+        f_lay.addStretch()
+
+        self.launch_btn = QPushButton("Launch Tool →", footer)
+        self.launch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.launch_btn.setFixedHeight(32)
+        self.launch_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4f46e5, stop:1 #6366f1);
+                color: #ffffff;
+                border: none;
+                border-radius: 8px;
+                padding: 0 14px;
+                font-size: 11px;
+                font-weight: 700;
+                font-family: 'Space Grotesk', 'Segoe UI';
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338ca, stop:1 #4f46e5);
+            }
+        """)
+        self.launch_btn.clicked.connect(self._on_launch_click)
+        f_lay.addWidget(self.launch_btn)
+
+        lay.addWidget(footer)
+
+        self._set_idle_style()
+
+    def _set_idle_style(self):
+        self.setStyleSheet("""
+            QFrame#modern_tool_card {
+                background-color: rgba(17, 24, 39, 0.95);
+                border: 1px solid rgba(255, 255, 255, 0.08);
                 border-radius: 16px;
-            }}
-            QFrame#quick_card:hover {{
-                background-color: #161922;
-                border: 1px solid rgba({self.cfg['color_rgb']}, 0.50);
-            }}
+            }
         """)
 
     def enterEvent(self, event):
-        self.icon_box.setStyleSheet(f"""
-            QFrame {{
-                background-color: rgba({self.cfg['color_rgb']}, 0.22);
-                border: 1px solid {self.cfg['color']};
-                border-radius: 29px;
+        self.setStyleSheet(f"""
+            QFrame#modern_tool_card {{
+                background-color: rgba(24, 33, 53, 0.98);
+                border: 1px solid rgba({self.theme["rgb"]}, 0.45);
+                border-radius: 16px;
             }}
         """)
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        self.icon_box.setStyleSheet(f"""
-            QFrame {{
-                background-color: rgba({self.cfg['color_rgb']}, 0.12);
-                border: 1px solid rgba({self.cfg['color_rgb']}, 0.30);
-                border-radius: 29px;
-            }}
-        """)
+        self._set_idle_style()
         super().leaveEvent(event)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self.on_click()
+            self._on_launch_click()
         else:
             super().mousePressEvent(event)
 
-    def on_click(self):
-        self.main_window.switch_to_tab(self.tab_index)
+    def _on_launch_click(self):
+        if self.main_window and hasattr(self.main_window, "switch_to_tab"):
+            self.main_window.switch_to_tab(self.tab_index)
+
+    def _on_secondary_click(self):
+        if not self.main_window:
+            return
+        if self.tab_index == 1:
+            path, _ = QFileDialog.getOpenFileName(self, "Quick Profile Feed", "", "Feed Files (*.xml *.json *.csv *.gz);;All Files (*.*)")
+            if path:
+                self.main_window.switch_to_tab(1)
+        elif self.tab_index == 5:
+            path, _ = QFileDialog.getOpenFileName(self, "Quick Convert Feed", "", "Feed Files (*.xml *.json *.csv *.txt);;All Files (*.*)")
+            if path:
+                if hasattr(self.main_window, "converter_widget"):
+                    self.main_window.converter_widget.set_local_file(path)
+                self.main_window.switch_to_tab(5)
+        else:
+            self.main_window.switch_to_tab(self.tab_index)
+
+
+class InstantDropzoneCard(QFrame):
+    """Card 6: Instant Drag & Drop ingestion zone + compact recent pipelines."""
+    def __init__(self, main_window=None, parent=None):
+        super().__init__(parent)
+        self.main_window = main_window
+        self.setObjectName("dropzone_card")
+        self.setAcceptDrops(True)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Preferred)
+        self.setMinimumHeight(240)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(22, 20, 22, 18)
+        lay.setSpacing(10)
+
+        # Header
+        top_row = QHBoxLayout()
+        dot = QLabel("●", self)
+        dot.setStyleSheet("color: #38bdf8; font-size: 13px; background: transparent;")
+        top_row.addWidget(dot)
+
+        title = QLabel("Instant Dropzone & Recents", self)
+        title.setStyleSheet("color: #f8fafc; font-size: 16px; font-weight: 700; font-family: 'Space Grotesk', 'Segoe UI'; background: transparent;")
+        top_row.addWidget(title)
+        top_row.addStretch()
+
+        auto_pill = QLabel("Auto-Detect", self)
+        auto_pill.setStyleSheet("""
+            QLabel {
+                background-color: rgba(56, 189, 248, 0.15);
+                border: 1px solid rgba(56, 189, 248, 0.3);
+                color: #38bdf8;
+                border-radius: 6px;
+                padding: 2px 7px;
+                font-size: 10px;
+                font-family: 'JetBrains Mono', monospace;
+                font-weight: 600;
+            }
+        """)
+        top_row.addWidget(auto_pill)
+        lay.addLayout(top_row)
+
+        # Dashed Drop Target Box
+        self.drop_target = QFrame(self)
+        self.drop_target.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.drop_target.setStyleSheet("""
+            QFrame {
+                border: 1.5px dashed rgba(56, 189, 248, 0.35);
+                border-radius: 10px;
+                background-color: rgba(8, 12, 20, 0.6);
+                padding: 8px;
+            }
+            QFrame:hover {
+                border-color: #38bdf8;
+                background-color: rgba(56, 189, 248, 0.05);
+            }
+        """)
+        dt_lay = QVBoxLayout(self.drop_target)
+        dt_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        dt_lay.setSpacing(3)
+
+        icon_lbl = QLabel("☁", self.drop_target)
+        icon_lbl.setStyleSheet("color: #38bdf8; font-size: 18px; background: transparent;")
+        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        dt_lay.addWidget(icon_lbl)
+
+        prompt_lbl = QLabel("Drop feed here to auto-detect and run", self.drop_target)
+        prompt_lbl.setStyleSheet("color: #f8fafc; font-size: 11px; font-weight: 600; font-family: 'Space Grotesk', 'Segoe UI'; background: transparent;")
+        prompt_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        dt_lay.addWidget(prompt_lbl)
+
+        pills_row = QHBoxLayout()
+        pills_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pills_row.setSpacing(6)
+        for tag in ["XML", "JSON", "CSV"]:
+            p = QLabel(tag, self.drop_target)
+            p.setStyleSheet("background: rgba(255, 255, 255, 0.05); color: #94a3b8; border-radius: 4px; padding: 1px 6px; font-size: 9px; font-family: 'JetBrains Mono';")
+            pills_row.addWidget(p)
+        dt_lay.addLayout(pills_row)
+
+        self.drop_target.mousePressEvent = lambda e: self._on_browse_file()
+        lay.addWidget(self.drop_target)
+
+        # Compact Recents List
+        rec_lay = QVBoxLayout()
+        rec_lay.setSpacing(5)
+
+        recents = [
+            ("catalog_2026.xml", "48.2 MB · 14.2k recs", "XML", "#fbbf24", "Run SIMD", 5),
+            ("products.json",    "12.4 MB · 8.9k recs",  "JSON", "#38bdf8", "Profile",  1),
+            ("jobs_stream.csv",  "84.1 MB · 92k recs",   "CSV",  "#4ade80", "Convert",  5),
+        ]
+
+        for name, meta, fmt, color, action_text, target_idx in recents:
+            row = QFrame(self)
+            row.setStyleSheet("background: rgba(8, 12, 20, 0.6); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 8px; padding: 4px 8px;")
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(0, 0, 0, 0)
+            rl.setSpacing(8)
+
+            tag_pill = QLabel(fmt, row)
+            tag_pill.setStyleSheet(f"background: rgba(255, 255, 255, 0.05); color: {color}; font-size: 9px; font-weight: bold; border-radius: 4px; padding: 1px 5px; font-family: 'JetBrains Mono';")
+            rl.addWidget(tag_pill)
+
+            info_col = QVBoxLayout()
+            info_col.setSpacing(0)
+            nl = QLabel(name, row)
+            nl.setStyleSheet("color: #f8fafc; font-size: 11px; font-weight: 600; font-family: 'Outfit'; background: transparent;")
+            info_col.addWidget(nl)
+            ml = QLabel(meta, row)
+            ml.setStyleSheet("color: #64748b; font-size: 10px; font-family: 'JetBrains Mono'; background: transparent;")
+            info_col.addWidget(ml)
+            rl.addLayout(info_col, 1)
+
+            btn = QPushButton(action_text, row)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFixedHeight(24)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background: rgba(255, 255, 255, 0.05);
+                    color: #cbd5e1;
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 5px;
+                    padding: 0 8px;
+                    font-size: 10px;
+                    font-weight: 600;
+                    font-family: 'Space Grotesk';
+                }
+                QPushButton:hover {
+                    background: #4f46e5;
+                    border-color: #6366f1;
+                    color: #ffffff;
+                }
+            """)
+            btn.clicked.connect(lambda checked=False, idx=target_idx: self._on_recent_clicked(idx))
+            rl.addWidget(btn)
+
+            rec_lay.addWidget(row)
+
+        lay.addLayout(rec_lay)
+
+        self.setStyleSheet("""
+            QFrame#dropzone_card {
+                background-color: rgba(17, 24, 39, 0.95);
+                border: 1px solid rgba(56, 189, 248, 0.25);
+                border-radius: 16px;
+            }
+            QFrame#dropzone_card:hover {
+                border-color: rgba(56, 189, 248, 0.45);
+            }
+        """)
+
+    def _on_browse_file(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Ingest Feed", "", "Feed Files (*.xml *.json *.csv *.gz);;All Files (*.*)")
+        if path:
+            self._handle_file(path)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        urls = event.mimeData().urls()
+        if urls:
+            path = urls[0].toLocalFile()
+            if path:
+                self._handle_file(path)
+                event.acceptProposedAction()
+
+    def _handle_file(self, path):
+        low = path.lower()
+        if low.endswith('.xml') or low.endswith('.json'):
+            if self.main_window and hasattr(self.main_window, "switch_to_tab"):
+                self.main_window.switch_to_tab(1)
+        elif low.endswith('.csv'):
+            if self.main_window and hasattr(self.main_window, "converter_widget"):
+                self.main_window.converter_widget.set_local_file(path)
+            if self.main_window and hasattr(self.main_window, "switch_to_tab"):
+                self.main_window.switch_to_tab(5)
+
+    def _on_recent_clicked(self, idx):
+        if self.main_window and hasattr(self.main_window, "switch_to_tab"):
+            self.main_window.switch_to_tab(idx)
+
+
+class ModernHubPage(QWidget):
+    """The redesigned Feed Workspace Hub command center matching the Midnight Telemetry design."""
+    def __init__(self, main_window=None, parent=None):
+        super().__init__(parent)
+        self.main_window = main_window
+        self.setObjectName("modern_hub_page")
+        self.cards = []
+
+        root_lay = QVBoxLayout(self)
+        root_lay.setContentsMargins(0, 0, 0, 0)
+        root_lay.setSpacing(0)
+
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                background-color: #0b0f19;
+                border: none;
+            }
+            QScrollBar:vertical {
+                background: #0b0f19;
+                width: 6px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(255, 255, 255, 0.12);
+                min-height: 20px;
+                border-radius: 3px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #6366f1;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+        """)
+
+        container = QWidget()
+        container.setStyleSheet("background-color: #0b0f19;")
+        c_lay = QVBoxLayout(container)
+        c_lay.setContentsMargins(36, 28, 36, 36)
+        c_lay.setSpacing(24)
+
+        # ── 1. Sub-Header Precision Bar ──
+        sub_hdr = self._build_sub_header()
+        c_lay.addWidget(sub_hdr)
+
+        # ── 2. Hero Section & Live KPI Bar ──
+        hero = self._build_hero_section()
+        c_lay.addWidget(hero)
+
+        # ── 3. Utilities Section Title ──
+        util_hdr = QHBoxLayout()
+        util_title = QLabel("Feed Engine Workspace Utilities", container)
+        util_title.setStyleSheet("color: #f8fafc; font-size: 18px; font-weight: 700; font-family: 'Space Grotesk', 'Segoe UI'; background: transparent;")
+        util_hdr.addWidget(util_title)
+        util_hdr.addStretch()
+
+        nodes_ready = QLabel("6 Operational Nodes Ready", container)
+        nodes_ready.setStyleSheet("color: #64748b; font-size: 11px; font-family: 'JetBrains Mono', monospace; background: transparent;")
+        util_hdr.addWidget(nodes_ready)
+        c_lay.addLayout(util_hdr)
+
+        # ── 4. Balanced 3x2 Bento Tools Grid ──
+        grid = self._build_tools_grid()
+        c_lay.addLayout(grid)
+
+        c_lay.addStretch()
+        scroll.setWidget(container)
+        root_lay.addWidget(scroll)
+
+        if self.main_window and hasattr(self.main_window, "_search"):
+            self.main_window._search.textChanged.connect(self._filter_cards)
+
+    def _build_sub_header(self):
+        hdr = QFrame(self)
+        hdr.setStyleSheet("background: transparent; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 16px;")
+        hl = QHBoxLayout(hdr)
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.setSpacing(16)
+
+        # Left: Architecture Status Badge
+        badge = QLabel("⚡ High-Throughput Stream Architecture", hdr)
+        badge.setStyleSheet("""
+            QLabel {
+                background-color: rgba(99, 102, 241, 0.12);
+                border: 1px solid rgba(99, 102, 241, 0.3);
+                color: #818cf8;
+                border-radius: 8px;
+                padding: 5px 12px;
+                font-size: 11px;
+                font-weight: 600;
+                font-family: 'Space Grotesk', 'Segoe UI';
+            }
+        """)
+        hl.addWidget(badge)
+        hl.addStretch()
+
+        # Right: Telemetry chips
+        chips_row = QHBoxLayout()
+        chips_row.setSpacing(10)
+
+        engine_chip = QLabel("● Engine: Rust-SIMD v4.2 Active", hdr)
+        engine_chip.setStyleSheet("""
+            QLabel {
+                background-color: rgba(16, 185, 129, 0.1);
+                border: 1px solid rgba(16, 185, 129, 0.3);
+                color: #10b981;
+                border-radius: 8px;
+                padding: 6px 12px;
+                font-size: 11px;
+                font-family: 'JetBrains Mono', monospace;
+                font-weight: 600;
+            }
+        """)
+        chips_row.addWidget(engine_chip)
+
+        mem_chip = QLabel("💾 Memory Pool: 128 MB", hdr)
+        mem_chip.setStyleSheet("""
+            QLabel {
+                background-color: rgba(56, 189, 248, 0.1);
+                border: 1px solid rgba(56, 189, 248, 0.3);
+                color: #38bdf8;
+                border-radius: 8px;
+                padding: 6px 12px;
+                font-size: 11px;
+                font-family: 'JetBrains Mono', monospace;
+                font-weight: 600;
+            }
+        """)
+        chips_row.addWidget(mem_chip)
+
+        simd_chip = QLabel("🚀 AVX2 Accelerated", hdr)
+        simd_chip.setStyleSheet("""
+            QLabel {
+                background-color: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                color: #cbd5e1;
+                border-radius: 8px;
+                padding: 6px 12px;
+                font-size: 11px;
+                font-family: 'Space Grotesk', 'Segoe UI';
+                font-weight: 600;
+            }
+        """)
+        chips_row.addWidget(simd_chip)
+
+        hl.addLayout(chips_row)
+        return hdr
+
+    def _on_clear_cache(self):
+        self.clear_btn.setText("✓ Cache Cleared")
+        self.clear_btn.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(16, 185, 129, 0.15);
+                border: 1px solid rgba(16, 185, 129, 0.4);
+                color: #10b981;
+                border-radius: 8px;
+                padding: 0 12px;
+                font-size: 11px;
+                font-weight: 600;
+                font-family: 'Space Grotesk', 'Segoe UI';
+            }
+        """)
+        QTimer.singleShot(1500, self._reset_clear_btn)
+
+    def _reset_clear_btn(self):
+        self.clear_btn.setText("Clear Cache")
+        self.clear_btn.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                color: #cbd5e1;
+                border-radius: 8px;
+                padding: 0 12px;
+                font-size: 11px;
+                font-weight: 600;
+                font-family: 'Space Grotesk', 'Segoe UI';
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.08);
+                color: #ffffff;
+            }
+        """)
+
+    def _build_hero_section(self):
+        hero_card = QFrame(self)
+        hero_card.setObjectName("hero_card")
+        hero_card.setStyleSheet("""
+            QFrame#hero_card {
+                background-color: rgba(17, 24, 39, 0.95);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 16px;
+            }
+        """)
+        hl = QVBoxLayout(hero_card)
+        hl.setContentsMargins(28, 24, 28, 24)
+        hl.setSpacing(20)
+
+        # Title Block
+        tb = QVBoxLayout()
+        tb.setSpacing(8)
+
+        tag_row = QHBoxLayout()
+        tag = QLabel("⚡ Next-Gen Stream Processor", hero_card)
+        tag.setStyleSheet("""
+            QLabel {
+                background-color: rgba(99, 102, 241, 0.15);
+                border: 1px solid rgba(99, 102, 241, 0.35);
+                color: #818cf8;
+                border-radius: 12px;
+                padding: 3px 12px;
+                font-size: 11px;
+                font-weight: 600;
+                font-family: 'Space Grotesk', 'Segoe UI';
+            }
+        """)
+        tag_row.addWidget(tag)
+        tag_row.addStretch()
+        tb.addLayout(tag_row)
+
+        h_title = QLabel("Feed Workspace <span style='color: #818cf8;'>Hub</span>", hero_card)
+        h_title.setStyleSheet("color: #f8fafc; font-size: 28px; font-weight: 800; font-family: 'Space Grotesk', 'Segoe UI'; background: transparent;")
+        tb.addWidget(h_title)
+
+        h_sub = QLabel("High-performance streaming toolkit for large-scale XML, JSON, and CSV feeds. Built with hardware-accelerated AST parsing and deterministic execution semantics.", hero_card)
+        h_sub.setWordWrap(True)
+        h_sub.setStyleSheet("color: #94a3b8; font-size: 13px; line-height: 19px; font-family: 'Outfit', 'Segoe UI'; background: transparent;")
+        tb.addWidget(h_sub)
+        hl.addLayout(tb)
+
+        # KPI Metrics Row (4 cards)
+        kpi_row = QHBoxLayout()
+        kpi_row.setSpacing(14)
+
+        kpis = [
+            ("Total Feeds Ingested", "1,482", "+12% this week", "#10b981", "Across 18 Active Hubs"),
+            ("Peak Throughput", "48,200 rec/s", "In-Memory SIMD", "#38bdf8", "Hardware Accelerated"),
+            ("Engine Core", "Rust SIMD AVX2", "Active", "#818cf8", "Hardware Accelerated (Active)"),
+            ("Memory Footprint", "Constant O(1)", "Zero-Spill", "#a78bfa", "Zero-Spill to Disk Buffer"),
+        ]
+
+        for title, val, badge_text, badge_color, sub in kpis:
+            k_card = QFrame(hero_card)
+            k_card.setStyleSheet("background: rgba(8, 12, 20, 0.6); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; padding: 12px 14px;")
+            kl = QVBoxLayout(k_card)
+            kl.setContentsMargins(0, 0, 0, 0)
+            kl.setSpacing(4)
+
+            top_k = QHBoxLayout()
+            tl = QLabel(title, k_card)
+            tl.setStyleSheet("color: #94a3b8; font-size: 11px; font-weight: 600; font-family: 'Space Grotesk'; background: transparent;")
+            top_k.addWidget(tl)
+            top_k.addStretch()
+
+            tb_pill = QLabel(badge_text, k_card)
+            tb_pill.setStyleSheet(f"background: rgba(255, 255, 255, 0.05); color: {badge_color}; border: 1px solid {badge_color}40; border-radius: 4px; padding: 1px 6px; font-size: 9px; font-family: 'JetBrains Mono'; font-weight: bold;")
+            top_k.addWidget(tb_pill)
+            kl.addLayout(top_k)
+
+            vl = QLabel(val, k_card)
+            vl.setStyleSheet("color: #f8fafc; font-size: 19px; font-weight: 700; font-family: 'Space Grotesk'; background: transparent;")
+            kl.addWidget(vl)
+
+            sl = QLabel(sub, k_card)
+            sl.setStyleSheet("color: #64748b; font-size: 10px; font-family: 'Outfit'; background: transparent;")
+            kl.addWidget(sl)
+
+            kpi_row.addWidget(k_card, 1)
+
+        hl.addLayout(kpi_row)
+        return hero_card
+
+    def _build_tools_grid(self):
+        grid = QGridLayout()
+        grid.setSpacing(18)
+
+        tools_data = [
+            (
+                "Feed Analyzer",
+                "Deep inspection, field profiling, schema inference, and anomaly detection.",
+                1,
+                "v2.4",
+                ["Interactive AST", "Distribution Charts", "Anomaly Detector"],
+                {"color": "#c084fc", "rgb": "192, 132, 252", "bg": "rgba(192, 132, 252, 0.15)", "border": "rgba(192, 132, 252, 0.35)", "icon": "🔍"},
+                "Quick Profile"
+            ),
+            (
+                "Feed Merger",
+                "Combine multiple source feeds into a single unified stream.",
+                2,
+                "v3.1",
+                ["Chunked Streaming", "Deduplication", "Collision Resolver"],
+                {"color": "#fbbf24", "rgb": "251, 191, 36", "bg": "rgba(251, 191, 36, 0.15)", "border": "rgba(251, 191, 36, 0.35)", "icon": "🥞"},
+                "New Merge"
+            ),
+            (
+                "Feed Validator",
+                "Validate syntactic structure, tag compliance, and semantic business rules.",
+                3,
+                "v1.9",
+                ["Strict Schema", "XSD & JSON Lint", "Rule Compliance"],
+                {"color": "#38bdf8", "rgb": "56, 189, 248", "bg": "rgba(56, 189, 248, 0.15)", "border": "rgba(56, 189, 248, 0.35)", "icon": "🛡️"},
+                "Batch Validate"
+            ),
+            (
+                "Feed Builder",
+                "Author, mock, compose, and generate compliant feeds from scratch.",
+                4,
+                "v4.0",
+                ["Visual Tree Node", "Mock Generator", "Live Lint"],
+                {"color": "#4ade80", "rgb": "74, 222, 128", "bg": "rgba(74, 222, 128, 0.15)", "border": "rgba(74, 222, 128, 0.35)", "icon": "🛠️"},
+                "Compose Feed"
+            ),
+            (
+                "Feed Converter",
+                "Bi-directional feed format transformation with constant memory footprint.",
+                5,
+                "v5.2",
+                ["XML ⇄ JSON ⇄ CSV", "Zero-Copy SIMD", "Instant Stream"],
+                {"color": "#818cf8", "rgb": "129, 140, 248", "bg": "rgba(129, 140, 248, 0.15)", "border": "rgba(129, 140, 248, 0.35)", "icon": "🔄"},
+                "Quick Convert"
+            ),
+        ]
+
+        # Add 5 Tool Cards
+        for i, (title, desc, idx, ver, badges, theme, sec_act) in enumerate(tools_data):
+            row = i // 3
+            col = i % 3
+            card = ModernToolCard(title, desc, idx, ver, badges, theme, sec_act, self.main_window, self)
+            self.cards.append(card)
+            grid.addWidget(card, row, col)
+
+        # Card 6: Instant Dropzone & Recents
+        drop_card = InstantDropzoneCard(self.main_window, self)
+        grid.addWidget(drop_card, 1, 2)
+
+        # Distribute row & col stretch symmetrically
+        for col_idx in range(3):
+            grid.setColumnStretch(col_idx, 1)
+        for row_idx in range(2):
+            grid.setRowStretch(row_idx, 1)
+
+        return grid
+
+    def _filter_cards(self, text):
+        query = text.strip().lower()
+        for card in self.cards:
+            if not query:
+                card.setVisible(True)
+            else:
+                matches = query in card.tool_title.lower() or query in card.tool_desc.lower()
+                card.setVisible(matches)
+
+
+
 class DragDropLabel(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -4212,214 +4824,8 @@ class FeedWorkspace(QMainWindow):
 
     # ── Home Page Builder ─────────────────────────────────────────────────────
     def _build_home_page(self):
-        scroll = QScrollArea(self)
-        scroll.setWidgetResizable(True)
-        scroll.setObjectName("home_scroll")
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        home = QWidget()
-        home.setObjectName("home_inner")
-        hl = QVBoxLayout(home)
-        hl.setContentsMargins(40, 36, 40, 36)
-        hl.setSpacing(32)
-
-        # ── Minimalist Hero Header ────────────────────────────────────────────
-        header_block = QVBoxLayout()
-        header_block.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        header_block.setContentsMargins(0, 10, 0, 10)
-        header_block.setSpacing(8)
-
-        welcome_to = QLabel("Welcome to", home)
-        welcome_to.setStyleSheet("color: #94a3b8; font-size: 18px; font-weight: 500; font-family: 'Segoe UI', Arial; background: transparent; border: none;")
-        welcome_to.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        header_block.addWidget(welcome_to)
-
-        hub_title = QLabel("Feed <span style='color: #818cf8;'>Workspace</span> <span style='color: #60a5fa;'>Hub</span>", home)
-        hub_title.setStyleSheet("color: #ffffff; font-size: 38px; font-weight: 800; font-family: 'Segoe UI', Arial; background: transparent; border: none;")
-        hub_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        header_block.addWidget(hub_title)
-
-        sub_desc = QLabel("High-performance streaming toolkit for XML and JSON feeds", home)
-        sub_desc.setStyleSheet("color: #94a3b8; font-size: 15px; font-family: 'Segoe UI', Arial; background: transparent; border: none;")
-        sub_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        header_block.addWidget(sub_desc)
-
-        hl.addLayout(header_block)
-
-        # ── Core Tools Grid (Clean 3-column layout) ───────────────────────────
-        self.stat_widgets = {}
-
-        grid_lay = QGridLayout()
-        grid_lay.setSpacing(20)
-
-        actions = [
-            ("Analyzer",   "Profile fields, parse schemas, and identify format anomalies", 1),
-            ("Merger",     "Combine multiple source files into single, cohesive feed", 2),
-            ("Validator",  "Run rule compliance and semantic integrity validation", 3),
-            ("Builder",    "Compose, edit, and generate feeds from scratch", 4),
-            ("Converter",  "Convert feed schemas across JSON, XML, and CSV", 5),
-        ]
-
-        for i, (title, desc, idx) in enumerate(actions):
-            row = i // 3
-            col = i % 3
-            card = QuickActionCard(title, desc, idx, self, home)
-            grid_lay.addWidget(card, row, col)
-
-        # Distribute row & column stretch equally so cards fill window space symmetrically
-        row_count = (len(actions) + 2) // 3
-        for col_idx in range(3):
-            grid_lay.setColumnStretch(col_idx, 1)
-        for row_idx in range(row_count):
-            grid_lay.setRowStretch(row_idx, 1)
-
-        hl.addLayout(grid_lay, 1)
-
-        scroll.setWidget(home)
-        return scroll
-
-    # ── Recent Activity Panel ─────────────────────────────────────────────────
-    def _build_recent_activity(self, parent):
-        frame = QFrame(parent)
-        frame.setObjectName("panel_card")
-        fl = QVBoxLayout(frame)
-        fl.setContentsMargins(20, 18, 20, 18)
-        fl.setSpacing(14)
-
-        title_row = QHBoxLayout()
-        title_icon = QLabel("🕐", frame)
-        title_icon.setStyleSheet("font-size: 16px; background: transparent; border: none; color: #94a3b8;")
-        title_row.addWidget(title_icon)
-        title_lbl = QLabel("Recent Activity", frame)
-        title_lbl.setStyleSheet("color: #f1f5f9; font-size: 14px; font-weight: bold; font-family: 'Segoe UI'; background: transparent; border: none;")
-        title_row.addWidget(title_lbl)
-        title_row.addStretch()
-        fl.addLayout(title_row)
-
-        # Divider
-        d = QFrame(frame)
-        d.setFrameShape(QFrame.Shape.HLine)
-        d.setStyleSheet("background-color: #1c1c1f; max-height:1px; border:none;")
-        fl.addWidget(d)
-
-        # Badge colors as proper rgba() — hex+alpha doesn't render in Qt stylesheets
-        activities = [
-            ("sales_feed_2024.xml",       "Validated",
-             "rgba(52,211,153,255)",  "rgba(52,211,153,28)",  "rgba(52,211,153,80)"),
-            ("career_feed_merged.xml",    "Merged",
-             "rgba(251,146,60,255)",  "rgba(251,146,60,28)",  "rgba(251,146,60,80)"),
-            ("jobs_data.xlsx",            "Built",
-             "rgba(96,165,250,255)",  "rgba(96,165,250,28)",  "rgba(96,165,250,80)"),
-            ("std_feed_analysis.html",    "Analyzed",
-             "rgba(192,132,252,255)", "rgba(192,132,252,28)", "rgba(192,132,252,80)"),
-        ]
-        times = ["2 min ago", "15 min ago", "32 min ago", "1 hr ago"]
-        for i, (filename, action, text_col, bg_col, border_col) in enumerate(activities):
-            row = QHBoxLayout()
-            row.setSpacing(10)
-
-            f_icon = QLabel("▸", frame)
-            f_icon.setFixedWidth(14)
-            f_icon.setStyleSheet("color: #334155; font-size: 15px; background: transparent; border: none;")
-            row.addWidget(f_icon)
-
-            fname = QLabel(filename, frame)
-            fname.setStyleSheet("color: #cbd5e1; font-size: 12px; font-family: 'Segoe UI'; background: transparent; border: none;")
-            row.addWidget(fname)
-            row.addStretch()
-
-            badge = QLabel(action, frame)
-            badge.setStyleSheet(f"""
-                color: {text_col};
-                background-color: {bg_col};
-                border: 1px solid {border_col};
-                border-radius: 5px;
-                font-size: 11px;
-                font-weight: 600;
-                font-family: 'Segoe UI';
-                padding: 2px 10px;
-            """)
-            row.addWidget(badge)
-
-            time_lbl = QLabel(times[i], frame)
-            time_lbl.setStyleSheet("color: #475569; font-size: 11px; font-family: 'Segoe UI'; background: transparent; border: none;")
-            time_lbl.setFixedWidth(70)
-            time_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
-            row.addWidget(time_lbl)
-
-            fl.addLayout(row)
-
-        fl.addStretch()
-        return frame
-
-    # ── Quick Tips Panel ──────────────────────────────────────────────────────
-    def _build_quick_tips(self, parent):
-        frame = QFrame(parent)
-        frame.setObjectName("panel_card")
-        
-        main_layout = QHBoxLayout(frame)
-        main_layout.setContentsMargins(20, 18, 20, 18)
-        main_layout.setSpacing(16)
-
-        # Left Column: Tips text content
-        left_col = QVBoxLayout()
-        left_col.setSpacing(10)
-
-        title_row = QHBoxLayout()
-        tip_icon = QLabel("💡", frame)
-        tip_icon.setStyleSheet("font-size: 16px; background: transparent; border: none;")
-        title_row.addWidget(tip_icon)
-        tip_title = QLabel("Quick Tips", frame)
-        tip_title.setStyleSheet("color: #f1f5f9; font-size: 14px; font-weight: bold; font-family: 'Segoe UI'; background: transparent; border: none;")
-        title_row.addWidget(tip_title)
-        title_row.addStretch()
-        left_col.addLayout(title_row)
-
-        d = QFrame(frame)
-        d.setFrameShape(QFrame.Shape.HLine)
-        d.setStyleSheet("background-color: #27272a; max-height:1px; border:none;")
-        left_col.addWidget(d)
-
-        tips = [
-            "Use Feed Analyzer to understand your data better.",
-            "Merge feeds to eliminate duplicates and unify data.",
-            "Always validate your feeds before publishing.",
-            "Build custom feeds quickly using templates.",
-        ]
-        for tip in tips:
-            row = QHBoxLayout()
-            row.setSpacing(8)
-            arrow = QLabel("▸", frame)
-            arrow.setStyleSheet("color: #ec4899; font-size: 14px; font-weight: bold; background: transparent; border: none;")
-            arrow.setFixedWidth(10)
-            row.addWidget(arrow)
-            tip_lbl = QLabel(tip, frame)
-            tip_lbl.setWordWrap(True)
-            tip_lbl.setStyleSheet("color: #94a3b8; font-size: 12px; font-family: 'Segoe UI'; background: transparent; border: none;")
-            row.addWidget(tip_lbl)
-            left_col.addLayout(row)
-
-        left_col.addStretch()
-        main_layout.addLayout(left_col, 3)
-
-        # Right Column: The mockup illustration
-        right_col = QVBoxLayout()
-        right_col.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        img_lbl = QLabel(frame)
-        img_lbl.setFixedSize(140, 115)
-        pix = QPixmap("dashboard_tips_mockup.png")
-        if not pix.isNull():
-            img_lbl.setPixmap(pix.scaled(140, 115, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
-        img_lbl.setStyleSheet("""
-            border-radius: 8px;
-            border: 1px solid #27272a;
-        """)
-        right_col.addWidget(img_lbl)
-        
-        main_layout.addLayout(right_col, 2)
-
-        return frame
+        self.hub_page = ModernHubPage(self, self)
+        return self.hub_page
 
 
     # ── Background Servers ────────────────────────────────────────────────────
