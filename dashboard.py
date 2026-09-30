@@ -4718,6 +4718,7 @@ class FeedWorkspace(QMainWindow):
                 ws = web_view.settings()
                 ws.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
                 ws.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
+                web_view.setZoomFactor(1.1)
                 container.addWidget(web_view)
                 container.setCurrentIndex(0)
                 self.stacked_widget.addWidget(container)
@@ -5182,7 +5183,7 @@ class FeedWorkspace(QMainWindow):
 
 # ── Entry Point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.RoundPreferFloor)
+    QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     font = QFont("Segoe UI", 14)

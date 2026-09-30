@@ -59,7 +59,7 @@ body {
     background-color: var(--bg-app);
     color: var(--text-main);
     font-family: var(--font-sans);
-    font-size: 14px;
+    font-size: 15px;
     line-height: 1.5;
     height: 100vh;
     overflow: hidden;
@@ -99,7 +99,7 @@ body {
 
 /* ── Typography & Components ──────────────────────────────────────────────── */
 .title-area h1 {
-    font-size: 1.5rem;
+    font-size: 1.7rem;
     font-weight: 700;
     letter-spacing: -0.025em;
     background: linear-gradient(135deg, var(--text-main) 30%, var(--accent) 100%);
@@ -109,7 +109,7 @@ body {
 
 .title-area p {
     color: var(--text-muted);
-    font-size: 0.85rem;
+    font-size: 0.95rem;
     margin-top: 2px;
 }
 
@@ -153,7 +153,7 @@ body {
 }
 
 .input-group label {
-    font-size: 0.8rem;
+    font-size: 0.88rem;
     font-weight: 600;
     color: var(--text-muted);
     text-transform: uppercase;
@@ -169,10 +169,10 @@ input[type="text"], input[type="number"], select {
     background-color: rgba(0, 0, 0, 0.2);
     border: 1px solid var(--border);
     color: var(--text-main);
-    padding: 10px 14px;
+    padding: 11px 15px;
     border-radius: 8px;
     font-family: var(--font-sans);
-    font-size: 0.9rem;
+    font-size: 0.98rem;
     outline: none;
     flex-grow: 1;
     transition: var(--transition);
@@ -188,10 +188,10 @@ input[type="text"]:focus, select:focus {
     background-color: var(--accent);
     color: #ffffff;
     border: none;
-    padding: 10px 18px;
+    padding: 11px 20px;
     border-radius: 8px;
     font-weight: 600;
-    font-size: 0.9rem;
+    font-size: 0.98rem;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -242,7 +242,7 @@ input[type="text"]:focus, select:focus {
 }
 
 .card-title {
-    font-size: 0.95rem;
+    font-size: 1.05rem;
     font-weight: 600;
     color: var(--text-main);
     display: flex;
@@ -268,13 +268,13 @@ input[type="text"]:focus, select:focus {
 }
 
 .info-item .label {
-    font-size: 0.75rem;
+    font-size: 0.85rem;
     color: var(--text-muted);
     font-weight: 500;
 }
 
 .info-item .value {
-    font-size: 1rem;
+    font-size: 1.15rem;
     font-weight: 600;
     word-break: break-all;
 }
@@ -568,9 +568,9 @@ tr.selected {
 }
 
 .ctx-badge {
-    font-size: 0.7rem;
+    font-size: 0.82rem;
     font-weight: 700;
-    padding: 2px 8px;
+    padding: 3px 9px;
     border-radius: 4px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -580,20 +580,20 @@ tr.selected {
 .ctx-badge--warning { background-color: var(--warning); color: #000; }
 
 .ctx-category {
-    font-size: 0.8rem;
+    font-size: 0.92rem;
     font-weight: 600;
     color: var(--text-main);
 }
 
 .ctx-location {
-    font-size: 0.75rem;
+    font-size: 0.85rem;
     color: var(--text-muted);
     margin-left: auto;
     font-family: var(--font-mono);
 }
 
 .ctx-message {
-    font-size: 0.82rem;
+    font-size: 0.92rem;
     color: var(--text-main);
     font-family: var(--font-mono);
     word-break: break-all;
@@ -623,13 +623,13 @@ tr.selected {
 }
 
 .ctx-explain-icon {
-    font-size: 1rem;
+    font-size: 1.1rem;
     flex-shrink: 0;
     margin-top: 2px;
 }
 
 .ctx-explain-label {
-    font-size: 0.72rem;
+    font-size: 0.82rem;
     font-weight: 700;
     color: var(--text-muted);
     text-transform: uppercase;
@@ -638,7 +638,7 @@ tr.selected {
 }
 
 .ctx-explain-text {
-    font-size: 0.82rem;
+    font-size: 0.92rem;
     color: var(--text-main);
     line-height: 1.55;
 }

@@ -42,6 +42,7 @@ body {
     background-color: var(--bg-main);
     color: var(--text-primary);
     font-family: var(--font-sans);
+    font-size: 14.5px;
     height: 100vh;
     overflow: hidden;
     -webkit-font-smoothing: antialiased;
@@ -254,14 +255,14 @@ body {
 .header-titles h1 {
     font-family: var(--font-heading);
     font-weight: 800;
-    font-size: 28px;
+    font-size: 32px;
     letter-spacing: -0.5px;
     margin-bottom: 6px;
 }
 
 .header-titles p {
     color: var(--text-secondary);
-    font-size: 14px;
+    font-size: 15px;
 }
 
 /* Buttons */
@@ -271,8 +272,8 @@ body {
     justify-content: center;
     gap: 8px;
     border-radius: 8px;
-    padding: 10px 20px;
-    font-size: 14px;
+    padding: 11px 22px;
+    font-size: 15px;
     font-weight: 600;
     cursor: pointer;
     transition: var(--transition-smooth);
@@ -322,16 +323,16 @@ body {
 }
 
 .btn-icon {
-    width: 38px;
-    height: 38px;
+    width: 40px;
+    height: 40px;
     padding: 0;
     border-radius: 8px;
     flex-shrink: 0;
 }
 
 .btn-sm {
-    padding: 6px 12px;
-    font-size: 12px;
+    padding: 7px 14px;
+    font-size: 13.5px;
 }
 
 /* Cards & Grid */
@@ -356,7 +357,7 @@ body {
 
 .card-header h2 {
     font-family: var(--font-heading);
-    font-size: 16px;
+    font-size: 17.5px;
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -371,9 +372,9 @@ body {
 .badge {
     background: rgba(59, 130, 246, 0.1);
     color: var(--accent-blue);
-    padding: 4px 10px;
+    padding: 4px 12px;
     border-radius: 20px;
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 600;
     border: 1px solid rgba(59, 130, 246, 0.15);
 }
@@ -553,7 +554,7 @@ body {
 }
 
 .form-group label {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--text-secondary);
     text-transform: uppercase;
@@ -570,9 +571,9 @@ body {
     background: #090d16;
     border: 1px solid var(--card-border);
     color: var(--text-primary);
-    padding: 10px 14px;
+    padding: 11px 16px;
     border-radius: 8px;
-    font-size: 13px;
+    font-size: 14px;
     outline: none;
     text-overflow: ellipsis;
 }
@@ -588,7 +589,7 @@ body {
     display: flex;
     align-items: center;
     gap: 10px;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 500;
     color: var(--text-secondary);
     cursor: pointer;
@@ -604,8 +605,8 @@ body {
 }
 
 .checkbox-custom {
-    height: 18px;
-    width: 18px;
+    height: 20px;
+    width: 20px;
     background-color: #090d16;
     border: 1px solid var(--card-border);
     border-radius: 4px;
@@ -627,8 +628,8 @@ body {
     content: "";
     position: absolute;
     display: none;
-    left: 6px;
-    top: 2px;
+    left: 7px;
+    top: 3px;
     width: 4px;
     height: 8px;
     border: solid white;
@@ -714,12 +715,12 @@ body {
 
 .gauge-value {
     font-family: var(--font-heading);
-    font-size: 24px;
+    font-size: 28px;
     font-weight: 700;
 }
 
 .gauge-unit {
-    font-size: 10px;
+    font-size: 12px;
     color: var(--text-muted);
     font-weight: 600;
     text-transform: uppercase;
@@ -746,7 +747,7 @@ body {
 }
 
 .metric-name {
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 600;
     color: var(--text-muted);
     text-transform: uppercase;
@@ -756,7 +757,7 @@ body {
 
 .metric-value {
     font-family: var(--font-heading);
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 700;
 }
 
@@ -1103,9 +1104,9 @@ body {
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid var(--card-border);
     color: var(--text-primary);
-    padding: 8px 12px 8px 32px;
+    padding: 10px 14px 10px 36px;
     border-radius: 8px;
-    font-size: 12px;
+    font-size: 13.5px;
     outline: none;
     transition: var(--transition-smooth);
 }
@@ -1126,12 +1127,13 @@ body {
     width: 100%;
     border-collapse: collapse;
     text-align: left;
-    font-size: 12px;
+    font-size: 13.5px;
     table-layout: fixed;
 }
 
 .telemetry-table th {
-    padding: 8px 12px;
+    padding: 10px 14px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--text-muted);
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
@@ -1142,7 +1144,8 @@ body {
 }
 
 .telemetry-table td {
-    padding: 8px 12px;
+    padding: 10px 14px;
+    font-size: 13.5px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.03);
     white-space: nowrap;
     overflow: hidden;
@@ -1156,9 +1159,9 @@ body {
 /* Status colors in table */
 .status-pill {
     display: inline-block;
-    padding: 2px 7px;
+    padding: 3px 8px;
     border-radius: 4px;
-    font-size: 10px;
+    font-size: 11.5px;
     font-weight: 600;
     text-transform: uppercase;
 }

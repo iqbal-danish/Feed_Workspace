@@ -201,6 +201,7 @@ class MainWindow(QMainWindow):
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.ShowScrollBars, True)
+        self.web_view.setZoomFactor(1.1)
 
         # Setup channel
         self.channel = QWebChannel()
