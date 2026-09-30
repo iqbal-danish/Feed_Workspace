@@ -4718,7 +4718,7 @@ class FeedWorkspace(QMainWindow):
                 ws = web_view.settings()
                 ws.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
                 ws.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
-                web_view.setZoomFactor(1.1)
+                web_view.setZoomFactor(1.05)
                 container.addWidget(web_view)
                 container.setCurrentIndex(0)
                 self.stacked_widget.addWidget(container)
