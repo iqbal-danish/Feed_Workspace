@@ -891,189 +891,6 @@ class ModernToolCard(QFrame):
             self.main_window.switch_to_tab(self.tab_index)
 
 
-class InstantDropzoneCard(QFrame):
-    """Card 6: Instant Drag & Drop ingestion zone + compact recent pipelines."""
-    def __init__(self, main_window=None, parent=None):
-        super().__init__(parent)
-        self.main_window = main_window
-        self.setObjectName("dropzone_card")
-        self.setAcceptDrops(True)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Preferred)
-        self.setMinimumHeight(245)
-
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(24, 22, 24, 20)
-        lay.setSpacing(12)
-
-        # Header
-        top_row = QHBoxLayout()
-        dot = QLabel("●", self)
-        dot.setStyleSheet("color: #38bdf8; font-size: 14px; background: transparent;")
-        top_row.addWidget(dot)
-
-        title = QLabel("Instant Dropzone & Recents", self)
-        title.setStyleSheet("color: #f8fafc; font-size: 18px; font-weight: 700; font-family: 'Segoe UI'; background: transparent;")
-        top_row.addWidget(title)
-        top_row.addStretch()
-
-        auto_pill = QLabel("Auto-Detect", self)
-        auto_pill.setStyleSheet("""
-            QLabel {
-                background-color: rgba(56, 189, 248, 0.15);
-                border: 1px solid rgba(56, 189, 248, 0.35);
-                color: #38bdf8;
-                border-radius: 6px;
-                padding: 3px 8px;
-                font-size: 11px;
-                font-family: 'Consolas';
-                font-weight: 600;
-            }
-        """)
-        top_row.addWidget(auto_pill)
-        lay.addLayout(top_row)
-
-        # Dashed Drop Target Box
-        self.drop_target = QFrame(self)
-        self.drop_target.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.drop_target.setStyleSheet("""
-            QFrame {
-                border: 1.5px dashed rgba(56, 189, 248, 0.4);
-                border-radius: 10px;
-                background-color: rgba(8, 12, 20, 0.7);
-                padding: 10px;
-            }
-            QFrame:hover {
-                border-color: #38bdf8;
-                background-color: rgba(56, 189, 248, 0.08);
-            }
-        """)
-        dt_lay = QVBoxLayout(self.drop_target)
-        dt_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        dt_lay.setSpacing(4)
-
-        icon_lbl = QLabel("☁", self.drop_target)
-        icon_lbl.setStyleSheet("color: #38bdf8; font-size: 20px; background: transparent;")
-        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        dt_lay.addWidget(icon_lbl)
-
-        prompt_lbl = QLabel("Drop feed here to auto-detect and run", self.drop_target)
-        prompt_lbl.setStyleSheet("color: #f8fafc; font-size: 12.5px; font-weight: 600; font-family: 'Segoe UI'; background: transparent;")
-        prompt_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        dt_lay.addWidget(prompt_lbl)
-
-        pills_row = QHBoxLayout()
-        pills_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        pills_row.setSpacing(8)
-        for tag in ["XML", "JSON", "CSV"]:
-            p = QLabel(tag, self.drop_target)
-            p.setStyleSheet("background: rgba(255, 255, 255, 0.08); color: #cbd5e1; border-radius: 4px; padding: 2px 7px; font-size: 10.5px; font-family: 'Consolas'; font-weight: 600;")
-            pills_row.addWidget(p)
-        dt_lay.addLayout(pills_row)
-
-        self.drop_target.mousePressEvent = lambda e: self._on_browse_file()
-        lay.addWidget(self.drop_target)
-
-        # Compact Recents List
-        rec_lay = QVBoxLayout()
-        rec_lay.setSpacing(6)
-
-        recents = [
-            ("catalog_2026.xml", "48.2 MB · 14.2k recs", "XML", "#fbbf24", "Run SIMD", 5),
-            ("products.json",    "12.4 MB · 8.9k recs",  "JSON", "#38bdf8", "Profile",  1),
-            ("jobs_stream.csv",  "84.1 MB · 92k recs",   "CSV",  "#4ade80", "Convert",  5),
-        ]
-
-        for name, meta, fmt, color, action_text, target_idx in recents:
-            row = QFrame(self)
-            row.setStyleSheet("background: rgba(8, 12, 20, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 6px 10px;")
-            rl = QHBoxLayout(row)
-            rl.setContentsMargins(0, 0, 0, 0)
-            rl.setSpacing(10)
-
-            tag_pill = QLabel(fmt, row)
-            tag_pill.setStyleSheet(f"background: rgba(255, 255, 255, 0.06); color: {color}; font-size: 10.5px; font-weight: bold; border-radius: 4px; padding: 2px 6px; font-family: 'Consolas';")
-            rl.addWidget(tag_pill)
-
-            info_col = QVBoxLayout()
-            info_col.setSpacing(1)
-            nl = QLabel(name, row)
-            nl.setStyleSheet("color: #f8fafc; font-size: 13px; font-weight: 600; font-family: 'Segoe UI'; background: transparent;")
-            info_col.addWidget(nl)
-            ml = QLabel(meta, row)
-            ml.setStyleSheet("color: #94a3b8; font-size: 11.5px; font-family: 'Consolas'; background: transparent;")
-            info_col.addWidget(ml)
-            rl.addLayout(info_col, 1)
-
-            btn = QPushButton(action_text, row)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setFixedHeight(28)
-            btn.setStyleSheet("""
-                QPushButton {
-                    background: rgba(255, 255, 255, 0.06);
-                    color: #cbd5e1;
-                    border: 1px solid rgba(255, 255, 255, 0.1);
-                    border-radius: 6px;
-                    padding: 0 12px;
-                    font-size: 11.5px;
-                    font-weight: 600;
-                    font-family: 'Segoe UI';
-                }
-                QPushButton:hover {
-                    background: #4f46e5;
-                    border-color: #6366f1;
-                    color: #ffffff;
-                }
-            """)
-            btn.clicked.connect(lambda checked=False, idx=target_idx: self._on_recent_clicked(idx))
-            rl.addWidget(btn)
-
-            rec_lay.addWidget(row)
-
-        lay.addLayout(rec_lay)
-
-        self.setStyleSheet("""
-            QFrame#dropzone_card {
-                background-color: rgba(17, 24, 39, 0.95);
-                border: 1px solid rgba(56, 189, 248, 0.25);
-                border-radius: 16px;
-            }
-            QFrame#dropzone_card:hover {
-                border-color: rgba(56, 189, 248, 0.45);
-            }
-        """)
-
-    def _on_browse_file(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Ingest Feed", "", "Feed Files (*.xml *.json *.csv *.gz);;All Files (*.*)")
-        if path:
-            self._handle_file(path)
-
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-
-    def dropEvent(self, event):
-        urls = event.mimeData().urls()
-        if urls:
-            path = urls[0].toLocalFile()
-            if path:
-                self._handle_file(path)
-                event.acceptProposedAction()
-
-    def _handle_file(self, path):
-        low = path.lower()
-        if low.endswith('.xml') or low.endswith('.json'):
-            if self.main_window and hasattr(self.main_window, "switch_to_tab"):
-                self.main_window.switch_to_tab(1)
-        elif low.endswith('.csv'):
-            if self.main_window and hasattr(self.main_window, "converter_widget"):
-                self.main_window.converter_widget.set_local_file(path)
-            if self.main_window and hasattr(self.main_window, "switch_to_tab"):
-                self.main_window.switch_to_tab(5)
-
-    def _on_recent_clicked(self, idx):
-        if self.main_window and hasattr(self.main_window, "switch_to_tab"):
-            self.main_window.switch_to_tab(idx)
-
 
 class ModernHubPage(QWidget):
     """The redesigned Feed Workspace Hub command center with crisp, high-clarity typography."""
@@ -1130,7 +947,7 @@ class ModernHubPage(QWidget):
         util_hdr.addWidget(util_title)
         util_hdr.addStretch()
 
-        nodes_ready = QLabel("6 Operational Nodes Ready", container)
+        nodes_ready = QLabel("5 Operational Nodes Ready", container)
         nodes_ready.setStyleSheet("color: #94a3b8; font-size: 12px; font-family: 'Consolas'; font-weight: 600; background: transparent;")
         util_hdr.addWidget(nodes_ready)
         c_lay.addLayout(util_hdr)
@@ -1282,10 +1099,6 @@ class ModernHubPage(QWidget):
             card = ModernToolCard(title, desc, idx, ver, badges, theme, sec_act, self.main_window, self)
             self.cards.append(card)
             grid.addWidget(card, row, col)
-
-        # Card 6: Instant Dropzone & Recents
-        drop_card = InstantDropzoneCard(self.main_window, self)
-        grid.addWidget(drop_card, 1, 2)
 
         # Distribute row & col stretch symmetrically
         for col_idx in range(3):
