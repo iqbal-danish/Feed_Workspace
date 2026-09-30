@@ -1123,11 +1123,7 @@ class ModernHubPage(QWidget):
         sub_hdr = self._build_sub_header()
         c_lay.addWidget(sub_hdr)
 
-        # ── 2. Hero Section & Live KPI Bar ──
-        hero = self._build_hero_section()
-        c_lay.addWidget(hero)
-
-        # ── 3. Utilities Section Title ──
+        # ── 2. Utilities Section Title ──
         util_hdr = QHBoxLayout()
         util_title = QLabel("Feed Engine Workspace Utilities", container)
         util_title.setStyleSheet("color: #f8fafc; font-size: 19px; font-weight: 700; font-family: 'Segoe UI'; background: transparent;")
@@ -1226,93 +1222,6 @@ class ModernHubPage(QWidget):
         hl.addLayout(chips_row)
         return hdr
 
-    def _build_hero_section(self):
-        hero_card = QFrame(self)
-        hero_card.setObjectName("hero_card")
-        hero_card.setStyleSheet("""
-            QFrame#hero_card {
-                background-color: rgba(17, 24, 39, 0.95);
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                border-radius: 16px;
-            }
-        """)
-        hl = QVBoxLayout(hero_card)
-        hl.setContentsMargins(28, 24, 28, 24)
-        hl.setSpacing(20)
-
-        # Title Block
-        tb = QVBoxLayout()
-        tb.setSpacing(8)
-
-        tag_row = QHBoxLayout()
-        tag = QLabel("⚡ Next-Gen Stream Processor", hero_card)
-        tag.setStyleSheet("""
-            QLabel {
-                background-color: rgba(99, 102, 241, 0.15);
-                border: 1px solid rgba(99, 102, 241, 0.35);
-                color: #818cf8;
-                border-radius: 12px;
-                padding: 4px 12px;
-                font-size: 12px;
-                font-weight: 600;
-                font-family: 'Segoe UI';
-            }
-        """)
-        tag_row.addWidget(tag)
-        tag_row.addStretch()
-        tb.addLayout(tag_row)
-
-        h_title = QLabel("Feed Workspace <span style='color: #818cf8;'>Hub</span>", hero_card)
-        h_title.setStyleSheet("color: #f8fafc; font-size: 32px; font-weight: 800; font-family: 'Segoe UI'; background: transparent;")
-        tb.addWidget(h_title)
-
-        h_sub = QLabel("High-performance streaming toolkit for large-scale XML, JSON, and CSV feeds. Built with hardware-accelerated AST parsing and deterministic execution semantics.", hero_card)
-        h_sub.setWordWrap(True)
-        h_sub.setStyleSheet("color: #94a3b8; font-size: 14.5px; line-height: 22px; font-family: 'Segoe UI'; background: transparent;")
-        tb.addWidget(h_sub)
-        hl.addLayout(tb)
-
-        # KPI Metrics Row (4 cards)
-        kpi_row = QHBoxLayout()
-        kpi_row.setSpacing(14)
-
-        kpis = [
-            ("Total Feeds Ingested", "1,482", "+12% this week", "#10b981", "Across 18 Active Hubs"),
-            ("Peak Throughput", "48,200 rec/s", "In-Memory SIMD", "#38bdf8", "Hardware Accelerated"),
-            ("Engine Core", "Rust SIMD AVX2", "Active", "#818cf8", "Hardware Accelerated (Active)"),
-            ("Memory Footprint", "Constant O(1)", "Zero-Spill", "#a78bfa", "Zero-Spill to Disk Buffer"),
-        ]
-
-        for title, val, badge_text, badge_color, sub in kpis:
-            k_card = QFrame(hero_card)
-            k_card.setStyleSheet("background: rgba(8, 12, 20, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 14px 16px;")
-            kl = QVBoxLayout(k_card)
-            kl.setContentsMargins(0, 0, 0, 0)
-            kl.setSpacing(5)
-
-            top_k = QHBoxLayout()
-            tl = QLabel(title, k_card)
-            tl.setStyleSheet("color: #94a3b8; font-size: 12px; font-weight: 600; font-family: 'Segoe UI'; background: transparent;")
-            top_k.addWidget(tl)
-            top_k.addStretch()
-
-            tb_pill = QLabel(badge_text, k_card)
-            tb_pill.setStyleSheet(f"background: rgba(255, 255, 255, 0.06); color: {badge_color}; border: 1px solid {badge_color}50; border-radius: 4px; padding: 2px 7px; font-size: 11px; font-family: 'Consolas'; font-weight: bold;")
-            top_k.addWidget(tb_pill)
-            kl.addLayout(top_k)
-
-            vl = QLabel(val, k_card)
-            vl.setStyleSheet("color: #f8fafc; font-size: 22px; font-weight: 700; font-family: 'Segoe UI'; background: transparent;")
-            kl.addWidget(vl)
-
-            sl = QLabel(sub, k_card)
-            sl.setStyleSheet("color: #64748b; font-size: 11.5px; font-family: 'Segoe UI'; background: transparent;")
-            kl.addWidget(sl)
-
-            kpi_row.addWidget(k_card, 1)
-
-        hl.addLayout(kpi_row)
-        return hero_card
 
     def _build_tools_grid(self):
         grid = QGridLayout()
