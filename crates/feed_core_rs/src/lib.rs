@@ -2,6 +2,8 @@ use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 use std::fs::File;
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub mod parser;
 pub mod validator;
@@ -43,9 +45,29 @@ fn compute_record_hash_rs(record_json: &str, key_fields: Vec<String>) -> PyResul
     Ok(dedup::compute_record_hash(&val, &key_fields))
 }
 
+pub struct CountingReader<R> {
+    inner: R,
+    bytes_read: Arc<AtomicU64>,
+}
+
+impl<R: std::io::Read> CountingReader<R> {
+    pub fn new(inner: R, bytes_read: Arc<AtomicU64>) -> Self {
+        Self { inner, bytes_read }
+    }
+}
+
+impl<R: std::io::Read> std::io::Read for CountingReader<R> {
+    #[inline]
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.bytes_read.fetch_add(n as u64, Ordering::Relaxed);
+        Ok(n)
+    }
+}
+
 pub enum XmlStreamSource {
-    Plain(File),
-    Gz(flate2::read::GzDecoder<File>),
+    Plain(CountingReader<File>),
+    Gz(flate2::read::GzDecoder<CountingReader<File>>),
 }
 
 impl std::io::Read for XmlStreamSource {
@@ -58,7 +80,10 @@ impl std::io::Read for XmlStreamSource {
     }
 }
 
-pub fn open_xml_source(file_path: &str) -> std::io::Result<XmlStreamSource> {
+pub fn open_xml_source(
+    file_path: &str,
+    bytes_counter: Arc<AtomicU64>,
+) -> std::io::Result<XmlStreamSource> {
     use std::io::{Read, Seek, SeekFrom};
     let mut file = File::open(file_path)?;
     let mut magic = [0u8; 2];
@@ -66,10 +91,11 @@ pub fn open_xml_source(file_path: &str) -> std::io::Result<XmlStreamSource> {
     file.seek(SeekFrom::Start(0))?;
 
     let is_gz = (n >= 2 && magic[0] == 0x1f && magic[1] == 0x8b) || file_path.to_lowercase().ends_with(".gz");
+    let counting_file = CountingReader::new(file, bytes_counter);
     if is_gz {
-        Ok(XmlStreamSource::Gz(flate2::read::GzDecoder::new(file)))
+        Ok(XmlStreamSource::Gz(flate2::read::GzDecoder::new(counting_file)))
     } else {
-        Ok(XmlStreamSource::Plain(file))
+        Ok(XmlStreamSource::Plain(counting_file))
     }
 }
 
@@ -78,6 +104,7 @@ pub fn open_xml_source(file_path: &str) -> std::io::Result<XmlStreamSource> {
 struct XmlRecordStreamer {
     inner: parser::xml::XmlRecordStream<XmlStreamSource>,
     store_raw: bool,
+    bytes_read: Arc<AtomicU64>,
 }
 
 #[pymethods]
@@ -85,12 +112,19 @@ impl XmlRecordStreamer {
     #[new]
     #[pyo3(signature = (file_path, tag_name, store_raw = true))]
     fn new(file_path: &str, tag_name: &str, store_raw: bool) -> PyResult<Self> {
-        let source = open_xml_source(file_path)
+        let bytes_read = Arc::new(AtomicU64::new(0));
+        let source = open_xml_source(file_path, bytes_read.clone())
             .map_err(|e| PyValueError::new_err(format!("Cannot open file '{file_path}': {e}")))?;
         Ok(Self {
             inner: parser::xml::XmlRecordStream::new(source, tag_name),
             store_raw,
+            bytes_read,
         })
+    }
+
+    /// Returns the exact number of raw bytes read from the underlying file so far
+    fn bytes_read(&self) -> u64 {
+        self.bytes_read.load(Ordering::Relaxed)
     }
 
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {

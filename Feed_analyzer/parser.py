@@ -425,7 +425,8 @@ def stream_xml_records(
             for json_str, raw_xml in streamer:
                 record_idx += 1
                 if progress_callback and (record_idx % 500 == 0):
-                    progress_callback(min(total_size, record_idx * 1024))
+                    bytes_read = streamer.bytes_read() if hasattr(streamer, 'bytes_read') else (record_idx * 1024)
+                    progress_callback(min(total_size, bytes_read))
                 record_dict = json.loads(json_str)
                 yield record_dict, raw_xml
             if record_idx == 0 and total_size == 0 and reject_log_path:
@@ -538,7 +539,8 @@ def stream_xml_batches(
                     break
                 record_count += len(batch)
                 if progress_callback:
-                    progress_callback(min(total_size, record_count * 1024))
+                    bytes_read = streamer.bytes_read() if hasattr(streamer, 'bytes_read') else (record_count * 1024)
+                    progress_callback(min(total_size, bytes_read))
                 yield batch
 
             if record_count == 0 and total_size == 0 and reject_log_path:
